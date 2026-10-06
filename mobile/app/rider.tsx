@@ -109,7 +109,7 @@ export default function RiderScreen() {
     // not a state the driver screen can invent its way out of.
     return (
       <Screen>
-        <ScreenHeader title="Available booking" />
+        <ScreenHeader title="Booking" />
         <EmptyState
           icon="alert-circle-outline"
           title="Rider profile missing"
@@ -154,7 +154,7 @@ export default function RiderScreen() {
   return (
     <Screen contentStyle={{ gap: scroll.cardGap }}>
       <ScreenHeader
-        title="Available booking"
+        title="Booking"
         subtitle={
           isOnline
             ? "You are online. Requests appear below."
@@ -454,6 +454,23 @@ export default function RiderScreen() {
   );
 }
 
+/** One number from the shift: the label small, the value doing the talking. */
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={{ flex: 1, gap: 2 }}>
+      <Text
+        style={[
+          font.tiny,
+          { color: colors.textFaint, textTransform: "uppercase" },
+        ]}
+      >
+        {label}
+      </Text>
+      <Text style={[font.bodyStrong, { color: colors.ink }]}>{value}</Text>
+    </View>
+  );
+}
+
 /** The next legal step in a trip's lifecycle, and what the button says. */
 const NEXT_STEP: Record<
   string,
@@ -468,6 +485,22 @@ const NEXT_STEP: Record<
   IN_PROGRESS: { label: "Complete the trip", status: "COMPLETED" },
 };
 
+/** What the rider is doing right now, in the words they would use. */
+const STAGE_LABEL: Record<string, string> = {
+  to_pickup: "On the way to the pickup",
+  at_pickup: "Waiting at the pickup",
+  in_trip: "Driving the trip",
+  done: "All done",
+};
+
+/** Its glyph, so the card is readable at a glance on a handlebar mount. */
+const STAGE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
+  to_pickup: "navigate",
+  at_pickup: "time",
+  in_trip: "car-sport",
+  done: "checkmark-circle",
+};
+
 function ActiveTrip({
   trip,
   busy,
@@ -478,150 +511,159 @@ function ActiveTrip({
   trip: {
     ride: {
       _id: Id<"rides">;
-      code: string;
       status: string;
-      bookingType?: string | null;
+      bookingType?: "ride" | "pabili" | "padala";
       pickup: { address?: string };
       destination: { address?: string };
       fare: number;
-      distanceKm: number;
-      itemCostActual?: number | null;
+      items?: { name: string; qty: number }[];
+      itemBudget?: number;
+      itemCostActual?: number;
+      notes?: string;
     };
-    passenger: { name: string; phone: string; bookedByName: string | null };
-    counterparty: { name: string; phone: string } | null;
+    passenger: { name: string };
   };
   busy: boolean;
   onAdvance: (
     status: "RIDER_ARRIVING" | "RIDER_ARRIVED" | "IN_PROGRESS" | "COMPLETED",
-  ) => void;
-  onCancel: () => void;
-  onReportCost: (cost: number) => void;
+  ) => void | Promise<void>;
+  onCancel: () => void | Promise<void>;
+  onReportCost: (cost: number) => void | Promise<void>;
 }) {
-  const [costText, setCostText] = useState("");
-  const next = NEXT_STEP[trip.ride.status];
-  const stage = driverStage(trip.ride.status);
-  const isErrand = (trip.ride.bookingType ?? "ride") !== "ride";
+  const { ride, passenger } = trip;
+  const next = NEXT_STEP[ride.status];
+  const stage = driverStage(ride.status);
+  const isErrand = ride.bookingType === "pabili" || ride.bookingType === "padala";
+  // Only the pabili receipt is asked for, and only until it has been given:
+  // a second box asking what was already reported is a question with its
+  // answer on the same card.
+  const [cost, setCost] = useState("");
+
+  const submitCost = async () => {
+    const value = Number.parseFloat(cost);
+    if (!Number.isFinite(value) || value < 0) return;
+    await onReportCost(value);
+  };
 
   return (
     <Card>
       <Between>
-        <Text style={[font.bodyStrong, { color: colors.ink }]}>
-          {trip.ride.code}
-        </Text>
-        <StatusPill status={trip.ride.status} />
+        <Row gap={space.sm}>
+          <Ionicons
+            name={STAGE_ICON[stage] ?? "navigate"}
+            size={16}
+            color={colors.red}
+          />
+          <Text style={[font.bodyStrong, { color: colors.ink }]}>
+            {STAGE_LABEL[stage] ?? titleCase(ride.status)}
+          </Text>
+        </Row>
+        <StatusPill status={ride.status} />
       </Between>
-      <LineItem label="Passenger" value={trip.passenger.name} />
-      {trip.passenger.bookedByName ? (
-        <LineItem label="Booked by" value={trip.passenger.bookedByName} />
+
+      <LineItem label="Fare" value={formatPeso(ride.fare)} />
+      {isErrand ? (
+        <LineItem
+          label="Service"
+          value={serviceLabel(ride.bookingType, "rider")}
+        />
       ) : null}
-      <LineItem
-        label="Pick-up"
-        value={shortAddress(trip.ride.pickup.address)}
-      />
+      <LineItem label="Pick-up" value={shortAddress(ride.pickup.address)} />
       <LineItem
         label="Drop-off"
-        value={shortAddress(trip.ride.destination.address)}
+        value={shortAddress(ride.destination.address)}
       />
-      <LineItem label="Fare" value={formatPeso(trip.ride.fare)} />
-      <LineItem label="Trip" value={`${trip.ride.distanceKm.toFixed(1)} km`} />
-      {isErrand && trip.ride.itemCostActual == null ? (
+      <LineItem label="Passenger" value={passenger.name} />
+
+      {(ride.items?.length ?? 0) > 0 ? (
         <>
           <Divider />
-          <TextField
-            label="What the purchase cost (₱)"
-            value={costText}
-            onChangeText={(text) => setCostText(text)}
-            keyboardType="decimal-pad"
-            placeholder="500"
-            hint="Reported so the commuter repays it in cash."
-          />
-          <Button
-            label="Report cost"
-            variant="secondary"
-            onPress={() => {
-              const value = Number.parseFloat(
-                costText.replace(/[^\\d.]/g, ""),
-              );
-              if (Number.isFinite(value) && value >= 0) onReportCost(value);
-            }}
-            disabled={costText.trim().length === 0}
-            fullWidth
-          />
+          <Text style={[font.label, { color: colors.textMuted }]}>
+            To {ride.bookingType === "pabili" ? "buy" : "deliver"}
+          </Text>
+          {(ride.items ?? []).map((item, index) => (
+            <LineItem
+              key={`${ride._id}-${index}`}
+              label={item.name}
+              value={`×${item.qty}`}
+            />
+          ))}
+          {ride.itemBudget != null ? (
+            <Text style={[font.small, { color: colors.textMuted }]}>
+              Budget {formatPeso(ride.itemBudget)} — the commuter's cash for the
+              purchase.
+            </Text>
+          ) : null}
         </>
       ) : null}
-      {isErrand && trip.ride.itemCostActual != null ? (
-        <LineItem
-          label="Purchase repaid"
-          value={formatPeso(trip.ride.itemCostActual)}
-        />
-      ) : null}
-      <Row gap={space.sm}>
-        {next ? (
-          <Button
-            label={next.label}
-            onPress={() => onAdvance(next.status)}
-            loading={busy}
-            style={{ flex: 1 }}
-          />
-        ) : null}
-        <Button
-          label="Chat"
-          variant="ghost"
-          onPress={() => router.push(`/chat?rideId=${trip.ride._id}`)}
-        />
-      </Row>
-      {stage !== "done" ? (
-        <Button
-          label="Cancel this ride"
-          variant="danger"
-          onPress={onCancel}
-          disabled={busy}
-          fullWidth
-        />
-      ) : null}
-      {trip.counterparty ? (
-        <Text style={[font.small, { color: colors.textFaint }]}>
-          Booking account: {trip.counterparty.name}
+
+      {ride.notes ? (
+        <Text style={[font.small, { color: colors.textMuted }]}>
+          Note: {ride.notes}
         </Text>
       ) : null}
+
+      {ride.bookingType === "pabili" ? (
+        ride.itemCostActual != null ? (
+          <Text style={[font.small, { color: colors.textMuted }]}>
+            You reported {formatPeso(ride.itemCostActual)}
+          </Text>
+        ) : (
+          <>
+            <TextField
+              label="What did you spend?"
+              placeholder="0.00"
+              keyboardType="decimal-pad"
+              value={cost}
+              onChangeText={setCost}
+              hint="The commuter pays this back on top of the fare."
+            />
+            <Button
+              label="Report amount"
+              variant="ghost"
+              disabled={busy || cost.trim().length === 0}
+              onPress={() => void submitCost()}
+            />
+          </>
+        )
+      ) : null}
+
+      {next ? (
+        <Button
+          label={next.label}
+          loading={busy}
+          onPress={() => void onAdvance(next.status)}
+        />
+      ) : null}
+      <Button
+        label="Cancel the trip"
+        variant="danger"
+        disabled={busy}
+        onPress={() => void onCancel()}
+      />
     </Card>
   );
 }
 
-function MiniStat({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <View style={{ gap: 2 }}>
-      <Text
-        style={[
-          font.tiny,
-          { color: colors.textFaint, textTransform: "uppercase" },
-        ]}
-      >
-        {label}
-      </Text>
-      <Text style={[font.bodyStrong, { color: colors.ink }]}>{value}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
+  /**
+   * The goes-online switch beside the header title.
+   *
+   * Its own height, not a hairline track: it is the one control a rider hits
+   * with a gloved thumb between trips, and it has to be worth the target size.
+   */
   switch: {
-    width: 62,
-    height: 34,
-    borderRadius: 17,
-    padding: 3,
+    width: 52,
+    height: touch.tapTarget,
+    borderRadius: touch.tapTarget / 2,
+    paddingHorizontal: 3,
     justifyContent: "center",
   },
+  /** Its knob. `alignSelf` in the caller parks it at whichever end is true. */
   knob: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: "#ffffff",
   },
 });

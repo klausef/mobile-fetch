@@ -35,7 +35,7 @@ export const ceb: Dictionary = {
     home: "Mag-book",
     activity: "Mga biyahe",
     chats: "Mga-chat",
-    available: "Available nga booking",
+    available: "Booking",
     activeRide: "Kasalukuyang biyahe",
     dashboard: "Dashboard",
     console: "Console",

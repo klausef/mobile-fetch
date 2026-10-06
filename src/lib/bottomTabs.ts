@@ -59,8 +59,7 @@ const ACTIVITY_TAB: BottomTab = {
 /**
  * The rider's earnings, rating and vehicle.
  *
- * Split out from the booking screen on purpose. "Available booking" is a work
- * surface — a map, a go-online switch and the offers coming in — and a rider
+ * Split out from the booking screen on purpose. Booking is a work surface — a map, a go-online switch and the offers coming in — and a rider
  * checks it between trips with one thumb. The numbers answer a different
  * question ("did today pay") and are asked at the end of a shift, not while
  * waiting for the next offer. Folding them into the same screen meant the
@@ -131,11 +130,11 @@ export function roleTabs(role: string, hasActiveRide = false): BottomTab[] {
         {
           key: "rider",
           to: "/rider",
-          // Named for what a rider opens the app to do — see what is available
-          // and take it — rather than for the screen type. "Dashboard" told
-          // them nothing they did not already know from the icon.
+          // Named for the work itself — the bookings a rider opens the app to
+          // take — rather than for the screen type. "Dashboard" told them
+          // nothing they did not already know from the icon.
           labelKey: "available",
-          label: "Available booking",
+          label: "Booking",
           icon: LayoutDashboard,
         },
         ...(hasActiveRide ? [ACTIVE_RIDE_TAB] : []),

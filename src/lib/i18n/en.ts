@@ -31,9 +31,9 @@ export const en = {
     home: "Book",
     activity: "Trips",
     chats: "Chats",
-    // The rider's tab is what the rider is there to do: see what is available
-    // and take it. Named for that, not for the screen type.
-    available: "Available booking",
+    // The rider's tab is the work itself: the bookings waiting to be taken.
+    // Named for that, not for the screen type.
+    available: "Booking",
     activeRide: "Current ride",
     dashboard: "Dashboard",
     console: "Console",
@@ -239,32 +239,32 @@ export const en = {
 
   setLocation: {
     pickupEyebrow: "Your pickup",
-    destinationTitle: "Set destination",
+    destinationTitle: "Set the destination",
     findingAddress: "Finding the address…",
     findingYou: "Finding your location…",
     searchPlaceholder: "Search for a destination",
     editingHint:
-      "Tap the map to move the pin onto the gate or the door you actually use.",
-    tapToFix: "Tap the map to fix the address",
+      "Tap the map to move the pin to the gate or door you use.",
+    tapToFix: "Tap the map to set the address",
     edit: "Edit",
     done: "Done",
-    cancelEdit: "Stop editing",
-    useMyLocation: "Use my current location",
+    cancelEdit: "Cancel editing",
+    useMyLocation: "Use my location",
     locatingLabel: "Finding your location…",
     currentLocationTitle: "Your current location",
-    locatingCurrent: "Finding you…",
+    locatingCurrent: "Locating you…",
     detectedHere: "You are here",
     useCurrentLocation: "Use current location",
     retryLocation: "Try again",
     fallbackTitle: "Set your pickup another way",
     fallbackSearchPlaceholder: "Search for your pickup address",
     fallbackHint:
-      "Search for your address above, or tap the map to drop the pin yourself.",
+      "Search for your address above, or tap the map so you can place the pin yourself.",
     fixDriftWarning:
-      "This pin is {m} m from your GPS position — check it lands on your gate.",
+      "This pin is {m} m off from your GPS — make sure it sits on your gate.",
     nearbyResultsFallback: "Tap a numbered pin to pick it",
     saveAs: "Save {name}",
-    heldPinTitle: "Pin dropped here",
+    heldPinTitle: "The pin was dropped here",
     heldPinLabel: "New pin",
     confirmHeldPin: "Set this as my destination",
     discardHeldPin: "Discard",
@@ -272,37 +272,38 @@ export const en = {
     clearRecents: "Clear",
     recentTitle: "Recent",
     dragHint: "Drag the pin, or tap the map",
-    draggingAddress: "Updating address…",
+    draggingAddress: "Looking for the address…",
     etaLabel: "ETA",
     nearbyResults: "Tap a numbered pin to pick it",
     outsideArea:
-      "This is outside our service area — riders are on the road in {cities} right now. You can still request; it may just take longer to find one.",
-    nextDestination: "Next — set the destination",
-    nextReview: "Next — review the trip",
-    skipToDestination: "Skip and set the destination",
+      "That is outside our service area — we have riders on the road in {cities} right now. You can still book from here, but it may take longer to find a rider.",
+    nextDestination: "Next — set your destination",
+    nextReview: "Next — review your trip",
+    skipToDestination: "Skip, then set the destination",
   },
 
   photo: {
     change: "Change profile photo",
-    add: "Add a profile photo",
+    add: "Add profile photo",
     remove: "Remove photo",
-    updated: "Photo updated",
-    removed: "Photo removed",
-    tooLarge: "That photo is too large",
+    updated: "Your photo was updated",
+    removed: "Your photo was removed",
+    tooLarge: "That photo is too large.",
     pickSmaller: "Pick one under 5 MB.",
-    wrongType: "Choose a JPEG, PNG or WebP image.",
+    wrongType: "Upload a JPEG, PNG or WebP image.",
   },
 
   errors: {
     generic: "Something went wrong. Please try again.",
     network: "Check your connection and try again.",
   },
-} as const;
-
-export type Dictionary = {
-  // Widened on purpose: the literal types of `en` would force every translation
-  // to repeat exactly the same strings.
-  [K in keyof typeof en]: {
-    [P in keyof (typeof en)[K]]: string;
-  };
 };
+
+/**
+ * The shape of a dictionary.
+ *
+ * Derived from the English object rather than written out by hand, so there is
+ * exactly one place a key can be added — here — and every other language is
+ * forced to carry it too.
+ */
+export type Dictionary = typeof en;

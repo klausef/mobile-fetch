@@ -312,19 +312,19 @@ test("a rider keeps booking, Dashboard, and the shared Activity and Chats", () =
 
 test("the rider's first tab says what a rider is there to do", () => {
   // "Dashboard" named the screen type, which told a rider nothing they did not
-  // already get from the icon. It now names the job: see what is available and
-  // take it.
+  // already get from the icon. It names the work itself — the booking a rider
+  // opens the app to take — and nothing more.
   const [first] = roleTabs("rider");
   expect(first.key).toBe("rider");
-  expect(first.label).toBe("Available booking");
+  expect(first.label).toBe("Booking");
 });
 
 test("the rider's tab resolves through the dictionary", () => {
   // The bar renders `t("nav", labelKey)`, so a labelKey that is not in the
   // dictionary would render the raw key instead of a word.
   const [first] = roleTabs("rider");
-  expect(nav[first.labelKey]).toBe("Available booking");
-  expect(ceb.nav[first.labelKey]).toBe("Available nga booking");
+  expect(nav[first.labelKey]).toBe("Booking");
+  expect(ceb.nav[first.labelKey]).toBe("Booking");
 });
 
 test("the Current ride tab only appears while a ride is in progress", () => {
