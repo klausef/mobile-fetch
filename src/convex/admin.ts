@@ -21,6 +21,7 @@ import { describeTariffChanges, tariffNoticeTitle } from "./lib/broadcast";
 import type { Doc } from "./_generated/dataModel";
 import { toCsv } from "../lib/csv";
 import { averageScore } from "../lib/ratings";
+import { RIDER_PLATFORM_RATE } from "./rides";
 
 /** Reject a tariff value that would make the platform charge nonsense. */
 function readAmount(value: number, field: string, max: number): number {
@@ -80,9 +81,14 @@ export const getOverview = query({
       searching: searching.length,
       inProgress: inProgress.length,
       completedToday: today.length,
-      // Service fees only. Item budgets are the rider's cash, not our revenue.
+      // Platform revenue only: the service fee the platform actually keeps, at
+      // the live rate. The fee is 0 — the rider collects the whole fare — so
+      // this is 0, and reporting the sum of fares here would claim revenue that
+      // was never charged. Item budgets are the rider's cash, not our revenue.
       serviceFeesToday:
-        Math.round(today.reduce((sum, r) => sum + r.fare, 0) * 100) / 100,
+        Math.round(
+          today.reduce((sum, r) => sum + r.fare * RIDER_PLATFORM_RATE, 0) * 100,
+        ) / 100,
       bookingsOpen: await isBookingsOpen(ctx),
       limits: await bookingLimits(ctx),
       // Surfaced so the Settings tab can show the live value rather than
@@ -406,7 +412,10 @@ export const getAnalytics = query({
           const at = ride.completedAt ?? ride.requestedAt;
           if (at >= start.getTime() && at < end) {
             const row = buckets[buckets.length - 1];
-            row.revenue = Math.round((row.revenue + ride.fare) * 100) / 100;
+            row.revenue =
+              Math.round(
+                (row.revenue + ride.fare * RIDER_PLATFORM_RATE) * 100,
+              ) / 100;
             row.rides += 1;
           }
         }
@@ -422,7 +431,8 @@ export const getAnalytics = query({
         const index = weeks - 1 - Math.floor(ageDays / 7);
         if (index < 0 || index >= weeks) continue;
         const row = buckets[index];
-        row.revenue = Math.round((row.revenue + ride.fare) * 100) / 100;
+        row.revenue =
+          Math.round((row.revenue + ride.fare * RIDER_PLATFORM_RATE) * 100) / 100;
         row.rides += 1;
       }
     } else {
@@ -446,7 +456,10 @@ export const getAnalytics = query({
           const end = new Date(row.at);
           end.setMonth(end.getMonth() + 1);
           if (at.getTime() >= row.at && at.getTime() < end.getTime()) {
-            row.revenue = Math.round((row.revenue + ride.fare) * 100) / 100;
+            row.revenue =
+              Math.round(
+                (row.revenue + ride.fare * RIDER_PLATFORM_RATE) * 100,
+              ) / 100;
             row.rides += 1;
             break;
           }
@@ -454,8 +467,9 @@ export const getAnalytics = query({
       }
     }
 
-    // Top riders, by what they earned rather than by trip count: the platform
-    // pays a percentage of the fare, so a rider with fewer, longer trips is
+    // Top riders, by what they earned rather than by trip count. With the
+    // platform fee removed a rider's earnings are the fares they collected, but
+    // the ranking is by money either way: a rider with fewer, longer trips is
     // not a smaller earner.
     const earned = new Map<string, { name: string; revenue: number; rides: number }>();
     for (const ride of completed) {
@@ -484,9 +498,13 @@ export const getAnalytics = query({
       bucket,
       series: buckets,
       topRiders,
-      totalRevenue: Math.round(
-        completed.reduce((sum, ride) => sum + ride.fare, 0) * 100,
-      ) / 100,
+      totalRevenue:
+        Math.round(
+          completed.reduce(
+            (sum, ride) => sum + ride.fare * RIDER_PLATFORM_RATE,
+            0,
+          ) * 100,
+        ) / 100,
       totalRides: completed.length,
     };
   },

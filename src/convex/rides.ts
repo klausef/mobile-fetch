@@ -1006,16 +1006,26 @@ export const listMyRides = query({
 /** How many completed rides the earnings summary looks back over. */
 const EARNINGS_SCAN = 200;
 
-/** What a rider takes home per completed ride: the fare, less the platform fee. */
-export const RIDER_PLATFORM_RATE = 0.15;
+/**
+ * The platform's cut of a completed ride's fare. **Zero: the rider collects the
+ * exact amount.**
+ *
+ * FETCH takes no platform fee, so a finished ride pays the rider the whole fare
+ * and nothing is withheld from it. The constant stays because it is what the
+ * subtraction below is written against: with a rate of 0 the rider's take-home
+ * is the fare itself, and if a fee is ever reintroduced it is one number here
+ * and one in `src/lib/driver.ts`, which `tests/driver-flow.test.ts` keeps equal.
+ */
+export const RIDER_PLATFORM_RATE = 0;
 
 /**
- * A rider's earnings, today and over the last seven days.
+ * What the riders actually earned: today, this week, and in total.
  *
- * Riders are told a percentage at signup and then never shown the arithmetic,
- * so this is the screen that has to make it true. The fee is taken off the fare
- * at read time from one constant rather than being stored on the ride, so
- * changing the rate is a decision about new trips instead of a backfill.
+ * The rate is applied at read time from one constant rather than stored on each
+ * ride, so removing the fee — which is what it is now, 0 — is a decision about
+ * every trip at once instead of a backfill. Nothing is deducted, so each figure
+ * below is the sum of the fares the rider was handed and can check against
+ * their own receipts.
  *
  * Only completed rides count. A cancelled or in-progress ride is not money the
  * rider has earned, and counting it would make the number move up and then
@@ -1045,6 +1055,8 @@ export const riderEarnings = query({
     dayStart.setHours(0, 0, 0, 0);
     const weekStart = dayStart.getTime() - 6 * 24 * 60 * 60 * 1000;
 
+    // The rider's take-home. With the platform fee removed this is the fare
+    // unchanged; the multiplication is kept so the rule has one home.
     const take = (fare: number) =>
       Math.round(fare * (1 - RIDER_PLATFORM_RATE) * 100) / 100;
 

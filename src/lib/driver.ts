@@ -18,20 +18,21 @@ import { AVERAGE_SPEED_KMH } from "./geo";
 import type { LatLng } from "./geo";
 
 /**
- * What the rider takes home per completed ride.
+ * The platform's cut of a fare. **Zero: the rider collects the exact amount.**
  *
- * When the rider collects the exact amount with no platform fee and no tax
- * deduction, the settlement helper still exposes the old rate constant for any
- * screen that has not switched yet, but the default settlement path returns the
- * full fare as the rider's take-home and treats the old commission math as an
- * opt-in path for screens that still show it.
+ * FETCH takes no platform fee. A completed ride pays the rider the full fare —
+ * no commission is deducted, and no tax is withheld from it, so the number on
+ * the receipt is the number the rider is handed.
  *
- * The old constant is kept deliberately and asserted equal to the server-side
- * one by `tests/driver-flow.test.ts`, because the two are deliberately separate
- * constants — importing the Convex module into the client would drag the server
- * runtime into the bundle for one float.
+ * It stays a named constant rather than being deleted, for two reasons. It is
+ * the single input `settleTrip` switches on (`0` means the exact-amount path),
+ * and it must stay equal to `RIDER_PLATFORM_RATE` on the server, because the
+ * rider's own earnings query subtracts with that one. `tests/driver-flow.test.ts`
+ * asserts the two are equal — they are deliberately separate constants, since
+ * importing the Convex module into the client would drag the server runtime into
+ * the bundle for one float.
  */
-export const DRIVER_PLATFORM_RATE = 0.15;
+export const DRIVER_PLATFORM_RATE = 0;
 
 /**
  * How long a rider has to answer an incoming request before it closes itself.
@@ -154,40 +155,35 @@ export interface TripSettlement {
   /** What the commuter was charged, tax included. */
   total: number;
   /**
-   * When the rate is the old platform rate, the fare before that cut.
-   *
-   * When the rider collects the exact amount with no platform fee and no tax
-   * deduction, this is the same as `total` — the commuter-facing fare the rider
-   * is reimbursed for — because there is no cut left to separate out.
+   * The fare before the platform cut.
+   * * With the platform fee removed this is the same as `total` — the fare the
+ * rider collects — because there is no cut left to separate out.
    */
   gross: number;
   /**
-   * When the rate is the old platform rate, the platform's cut of `gross`.
-   *
-   * When the rider collects the exact amount, this is 0 and the settlement path
-   * is the one a rider receipt screen can skip rather than hide.
+   * The platform's cut of `gross`. 0 under the exact-amount rule, which is what
+   * lets a receipt screen omit the fee line instead of printing a zero.
    */
   commission: number;
   /**
    * What the rider actually takes home.
    *
-   * Under the old rate this was `gross - commission`. Under the exact-amount
-   * rule this is the full fare the rider collected.
+   * Under the exact-amount rule this is the full fare the rider collected; a
+   * non-zero rate would make it `gross - commission`.
    */
   net: number;
   /**
    * The rate the settlement was computed with.
    *
-   * Kept so a screen can still decide whether to render the old commission line
-   * for riders on the old setup, without re-deriving the rate from a percentage
-   * it was never told.
+   * Kept so a screen can decide whether to render a commission line without
+   * re-deriving the rate from a percentage it was never told.
    */
   platformRate: number;
   /**
    * Whether this settlement used the exact-amount rule.
    *
-   * A screen that still has to show the old commission story can branch on this
-   * instead of guessing from a zero percentage alone.
+   * A receipt branches on this rather than on a zero commission, so the rule is
+   * stated once here instead of being inferred in every screen.
    */
   exactAmount: boolean;
 }
@@ -197,16 +193,13 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 /**
  * Split a finished fare into the rider's take and, optionally, the platform's.
  *
- * The old path still exists for any screen that has not moved to the exact-amount
- * rule yet: when the rate is the legacy platform rate, the fare is still split
- * into gross, commission and net exactly as before, and each ride is rounded
- * before summing so the listed fares still add up to the number the rider can
- * see.
+ * When the rate is 0 — the live rule, since the platform fee was removed — the
+ * fare is returned untouched: the rider collects the exact amount, no platform
+ * fee and no tax deduction are applied at settlement time, and the breakdown is
+ * still returned so a receipt can show the commuter-facing lines.
  *
- * When the rate is 0 — the exact-amount rule — the fare is returned untouched:
- * the rider collects the exact amount, no platform fee and no tax deduction are
- * applied at settlement time, and the breakdown is returned so a receipt can
- * still show the commuter-facing lines if it wants to.
+ * A non-zero rate still splits the fare into gross, commission and net, rounded
+ * per ride, so the helper remains correct if a fee is ever reintroduced.
  *
  * When the breakdown is missing — a ride booked before ride types existed —
  * the payout falls back to the flat fare with no commission line to show,
