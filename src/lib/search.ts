@@ -420,7 +420,7 @@ export function fitPoints(
  * cancelling on movement is what stops the map jumping while somebody is
  * scrolling to look at something.
  */
-export const LONG_PRESS_MS = 500;
+export const LONG_PRESS_MS = 400;
 
 /** How far a finger may drift during a press before it counts as a pan. */
 export const LONG_PRESS_TOLERANCE_PX = 10;

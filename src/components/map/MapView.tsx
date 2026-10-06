@@ -1139,10 +1139,8 @@ export function MapView({
           Below the controls (z-10) so zoom and recentre stay tappable, and
           above the canvas so the pin is never lost against the tiles.
       */}
-      {centerPin ? (
-        <div
+      {centerPin ? (          <div
           className="pointer-events-none absolute inset-0 z-[5]"
-          data-testid="center-pin"
         >
           {/*
               `left-1/2 top-1/2` puts the *top-left corner* of the graphic on

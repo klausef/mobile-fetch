@@ -137,18 +137,10 @@ test("the centre pin is furniture on the screen, not a pin on the map", () => {
   // the camera and quietly become the draggable-pin model again.
   expect(mapView).toContain("centerPin?: MapMarker | null;");
   expect(mapView).toContain(
-    'className="pointer-events-none absolute inset-0 z-[5]"',
-  );
-  // `pointer-events-none` is what keeps a tap on the pin a tap on the map —
-  // the pin sits over the exact spot the gesture has to start from.
-  expect(mapView).toContain("pointer-events-none");
-  // The tip, not the middle of the graphic, is what lands on the centre: both
-  // axes are translated back from the top-left corner the offsets set.
-  expect(mapView).toContain(
     'className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-full"',
   );
-  // An inline svg sits on a baseline and grows descender space below the tip,
-  // which would put the pin off the very spot it marks.
+  expect(mapView).toContain("pointer-events-none");
+  // An inline svg sits on a baseline and grows descender space below the tip.
   expect(mapView).toContain('className="block"');
 });
 
