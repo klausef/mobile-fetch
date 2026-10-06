@@ -563,9 +563,8 @@ export default function RiderDashboard() {
           {/* The weekly trend line that used to sit here repeated the dark
               card's own "This week" stat and added a platform-fee sentence to
               the rider's home. Both are removed: the number the rider wants is
-              already above, and the cut is stated plainly on the trip
-              settlement at the end of a ride, where it actually costs them
-              something and so is worth reading. */}
+              already above, and the money is itemised on the trip settlement at
+              the end of a ride, where the rider actually collects it. */}
         </div>
       </div>
 

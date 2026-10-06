@@ -8,7 +8,11 @@
  * into the shape the map draws.
  */
 
-import type { LatLng } from "@/lib/shared";
+// The coordinate type comes straight from the shared core, the way
+// `lib/shared.ts` reaches the rest of it. Deliberately not the `@/lib/...` alias:
+// the shared barrel also re-exports React Native components, and this file is
+// read by the repo's test project too, where `@/*` points at the web app.
+import type { LatLng } from "../../src/lib/geo";
 
 export type RouteCoordinate = [number, number];
 
@@ -38,4 +42,3 @@ export function straightLine(
     [to.lng, to.lat],
   ];
 }
-

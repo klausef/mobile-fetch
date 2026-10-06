@@ -131,10 +131,35 @@ test("a ride with no breakdown still pays the rider its flat fare", () => {
 });
 
 test("a nonsense platform rate falls back rather than eating the fare", () => {
-  expect(settleTrip(null, 100, Number.NaN).net).toBe(85);
+  // The fallback is the live rate, and the live rate is 0: FETCH takes no
+  // platform fee, so a broken argument must not reintroduce a cut the product
+  // no longer takes. The rider is handed the whole fare.
+  expect(DRIVER_PLATFORM_RATE).toBe(0);
+  expect(settleTrip(null, 100, Number.NaN).net).toBe(100);
+  expect(settleTrip(null, 100, Number.NaN).commission).toBe(0);
   expect(settleTrip(null, 100, Number.NaN).platformRate).toBe(
     DRIVER_PLATFORM_RATE,
   );
+});
+
+test("the rider collects the exact fare when no rate is named", () => {
+  // No commission argument, no deduction: the default settlement pays the
+  // whole fare, which is what makes the receipt and the cash agree.
+  const breakdown = {
+    baseFare: 60,
+    distanceFee: 80,
+    stopFee: 0,
+    surgeFee: 14,
+    tax: 0,
+    total: 154,
+    taxRatePct: 0,
+  };
+  const settlement = settleTrip(breakdown, 154);
+  expect(settlement.exactAmount).toBe(true);
+  expect(settlement.commission).toBe(0);
+  expect(settlement.net).toBe(154);
+  // The fare the server stored is what the rider is handed, down to the peso.
+  expect(settlement.net).toBe(settlement.total);
 });
 
 test("nearby demand collapses into one heavy cell", () => {
