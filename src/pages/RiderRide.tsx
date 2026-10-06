@@ -956,6 +956,20 @@ function CompletedPanel({
                 </dd>
               </div>
             ) : null}
+            {/* A pabili whose store pin was corrected is repriced without the
+                itemisation being rewritten, so the fare the rider collects is
+                no longer the sum of the rows above. Showing the difference
+                keeps the receipt adding up — and it is the one line on this
+                screen that explains why the take-home is not the original
+                quote. Absent on every other trip. */}
+            {settlement.storeCorrection > 0 ? (
+              <div className="flex items-baseline justify-between gap-3">
+                <dt className="text-muted-foreground">Store correction</dt>
+                <dd className="tracking-tight">
+                  +{formatPeso(settlement.storeCorrection)}
+                </dd>
+              </div>
+            ) : null}
             {settlement.exactAmount ? null : (
               <div className="flex items-baseline justify-between gap-3 border-t border-border pt-1.5">
                 <dt className="text-muted-foreground">

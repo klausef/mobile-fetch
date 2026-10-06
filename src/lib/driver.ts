@@ -155,9 +155,24 @@ export interface TripSettlement {
   /** What the commuter was charged, tax included. */
   total: number;
   /**
+   * The gap between the fare the server stored and the original quote.
+   *
+   * Non-zero in exactly one live case: a pabili whose store pin the rider
+   * corrected. That trip is repriced off the real shop and the ride's stored
+   * `fare` moves, but the itemised breakdown beside it is never rewritten, so it
+   * still holds the first quote. Surfacing the difference as its own line is
+   * what keeps the receipt's rows adding up to the money the rider is handed,
+   * which is the stored fare.
+   *
+   * Never negative: a fare *below* the quoted total is tax the rider does not
+   * collect, and explaining that is the tax row's job, not this one's.
+   */
+  storeCorrection: number;
+  /**
    * The fare before the platform cut.
-   * * With the platform fee removed this is the same as `total` — the fare the
- * rider collects — because there is no cut left to separate out.
+   *
+   * With the platform fee removed this is the same as `net` — the fare the rider
+   * collects — because there is no cut left to separate out.
    */
   gross: number;
   /**
@@ -194,9 +209,14 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  * Split a finished fare into the rider's take and, optionally, the platform's.
  *
  * When the rate is 0 — the live rule, since the platform fee was removed — the
- * fare is returned untouched: the rider collects the exact amount, no platform
- * fee and no tax deduction are applied at settlement time, and the breakdown is
- * still returned so a receipt can show the commuter-facing lines.
+ * rider collects the exact amount: no platform fee and no tax deduction are
+ * applied at settlement time, and the breakdown is still returned so a receipt
+ * can show the commuter-facing lines.
+ *
+ * The `fare` argument is the charge the server stored and it wins over the
+ * breakdown's own total, because the breakdown is the *first* quote: a pabili
+ * whose store pin the rider corrects is repriced without the itemisation being
+ * rewritten, so only the stored fare is the money that actually moves.
  *
  * A non-zero rate still splits the fare into gross, commission and net, rounded
  * per ride, so the helper remains correct if a fee is ever reintroduced.
@@ -223,6 +243,11 @@ export function settleTrip(
   const total = round2(b?.total ?? fare);
 
   if (exactAmount) {
+    // The rider collects the fare the server stored — not the sum of the
+    // itemised lines, and not the breakdown's own total. `ride.fare` is what
+    // `riderEarnings` sums and what the commuter is charged, so it is the one
+    // number that makes the receipt and the earnings agree.
+    const charged = Number.isFinite(fare) ? round2(fare) : total;
     return {
       baseFare,
       distanceFee,
@@ -230,9 +255,10 @@ export function settleTrip(
       surgeFee,
       subtotal,
       total,
-      gross: total,
+      storeCorrection: round2(Math.max(0, charged - total)),
+      gross: charged,
       commission: 0,
-      net: total,
+      net: charged,
       platformRate: 0,
       exactAmount: true,
     };
@@ -248,6 +274,7 @@ export function settleTrip(
     surgeFee,
     subtotal,
     total,
+    storeCorrection: 0,
     gross,
     commission,
     net,

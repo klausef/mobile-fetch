@@ -147,6 +147,38 @@ describe("the data the console reads is bounded", () => {
   });
 });
 
+describe("the console reports the money the platform actually charged", () => {
+  test("revenue is the platform's own cut, never the fares the riders collected", () => {
+    // FETCH takes no platform fee — riders collect the exact amount — so
+    // platform revenue is 0. The console used to sum `ride.fare` here, which
+    // would now claim every fare as revenue the platform never charged, and
+    // would disagree with the riders' own take-home on the same screen.
+    //
+    // Every money sum in the analytics is scaled: the three revenue buckets and
+    // the period total. Four sites, asserted as a count so a fifth one added
+    // later without the rate is a failure rather than a silent drift.
+    const analytics = functionBody("getAnalytics");
+    expect(analytics).toContain("(row.revenue + ride.fare * RIDER_PLATFORM_RATE) * 100");
+    expect(analytics).toContain("sum + ride.fare * RIDER_PLATFORM_RATE");
+    expect(
+      (analytics.match(/ride\.fare \* RIDER_PLATFORM_RATE/g) ?? []).length,
+    ).toBe(4);
+
+    // The one sum that is deliberately *not* scaled is the top-riders chart: it
+    // answers "what did this rider earn", and with no fee that is the fare
+    // itself. Scaling it would understate every rider's ranking.
+    expect(analytics).toContain("row.revenue + ride.fare) * 100");
+  });
+
+  test("the overview's service-fee stat is scaled by the same rate", () => {
+    // Two screens, one rule: a second copy of the arithmetic is how the console
+    // and the rider's receipt start disagreeing about the same trip.
+    const overview = functionBody("getOverview");
+    expect(overview).toContain("r.fare * RIDER_PLATFORM_RATE");
+    expect(overview).not.toContain("sum + r.fare, 0)");
+  });
+});
+
 describe("the fare engine the console previews is the one the app charges", () => {
   test("the worked example calls the shared breakdown, not a local formula", () => {
     // A preview computed by a second formula is a preview that can disagree with

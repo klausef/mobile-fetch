@@ -48,6 +48,8 @@ test("the rider's take-home is the exact fare, with nothing withheld", () => {
   expect(settlement.commission).toBe(0);
   expect(settlement.net).toBe(154);
   expect(settlement.net).toBe(settlement.total);
+  // Nothing was corrected and nothing was withheld, so there is no extra row.
+  expect(settlement.storeCorrection).toBe(0);
 });
 
 test("the receipt still carries the commuter-facing lines", () => {
@@ -101,6 +103,61 @@ test("the platform-fee line is omitted from the rider receipt, not shown as zero
   );
   expect(rideScreen).toContain("settlement.exactAmount ? null : (");
   expect(rideScreen).toContain("formatPeso(settlement.net)");
+});
+
+test("a store-corrected errand pays the repriced fare, not the first quote", () => {
+  // `confirmStore` reprices a pabili off the real shop, raising the ride's fare,
+  // and never rewrites the itemisation beside it. The rider must be handed the
+  // repriced fare — the number `riderEarnings` sums — with the difference shown
+  // as its own row so the receipt still adds up.
+  const quoted = { ...breakdown, total: 154 };
+  const repriced = 192.5;
+
+  const settlement = settleTrip(quoted, repriced);
+
+  expect(settlement.net).toBe(repriced);
+  expect(settlement.total).toBe(154);
+  expect(settlement.storeCorrection).toBe(38.5);
+  // The rows reconcile: itemised lines + the correction = what is collected.
+  expect(
+    settlement.subtotal + settlement.surgeFee + settlement.storeCorrection,
+  ).toBe(settlement.net);
+});
+
+test("a fare that excludes tax pays the rider the fare, not the taxed total", () => {
+  // `requestRide` stores `riderPayout` as the fare, which excludes VAT. If the
+  // tax rate is ever restored, the rider must still collect the fare — the tax
+  // was collected on the government's behalf, and paying it out would mean the
+  // platform remitting VAT it never kept.
+  const taxed = {
+    baseFare: 60,
+    distanceFee: 80,
+    stopFee: 0,
+    surgeFee: 14,
+    tax: 18.48,
+    total: 172.48,
+    taxRatePct: 12,
+  };
+
+  const settlement = settleTrip(taxed, 154);
+
+  expect(settlement.net).toBe(154);
+  expect(settlement.total).toBe(172.48);
+  // The gap is tax, not a store correction — so it is not shown as one.
+  expect(settlement.storeCorrection).toBe(0);
+});
+
+test("the receipt shows the store correction, so its rows add up", () => {
+  // The field being right is not enough: if this row is dropped from the
+  // receipt, a corrected pabili shows itemised lines that do not reach the
+  // take-home and the rider is handed a number with no visible explanation.
+  const rideScreen = readFileSync(
+    new URL("../src/pages/RiderRide.tsx", import.meta.url),
+    "utf8",
+  );
+  expect(rideScreen).toContain("settlement.storeCorrection > 0");
+  expect(rideScreen).toContain("Store correction");
+  expect(rideScreen).toContain("formatPeso(settlement.storeCorrection)");
 });
 
 test("an invalid rate argument does not reintroduce a deduction", () => {
