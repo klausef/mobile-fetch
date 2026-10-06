@@ -14,10 +14,18 @@
 import { useState } from "react";
 import { StyleSheet } from "react-native";
 import { type Route } from "expo-router";
-import { MapboxMap } from "@/lib/mapbox-components";
+import { MapboxMap, type MapPin } from "@/lib/mapbox-components";
 import { colors, font } from "@/lib/theme";
 import { Text, View } from "react-native";
 import type { LatLng } from "@/lib/shared";
+
+declare module "expo-router" {
+  export namespace Route {
+    export interface Meta {
+      title: string;
+    }
+  }
+}
 
 export const META: Route.Meta = {
   title: "Mapbox",
@@ -38,13 +46,13 @@ const PICKUP: LatLng = {
 export default function MapboxRouteScreen() {
   const [loading, setLoading] = useState(true);
 
-  const pickupPin = {
+  const pickupPin: MapPin = {
     id: "pickup",
     coordinate: PICKUP,
     title: "Pickup",
   };
 
-  const destinationPin = {
+  const destinationPin: MapPin = {
     id: "destination",
     coordinate: DESTINATION,
     title: "Destination",

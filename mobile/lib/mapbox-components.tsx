@@ -10,7 +10,7 @@
  */
 
 import { useRef } from "react";
-import { StyleSheet } from "react-native";
+import { StyleSheet, Text } from "react-native";
 import Mapbox from "@rnmapbox/maps";
 import { MapView } from "@rnmapbox/maps";
 import { Camera } from "@rnmapbox/maps";
@@ -18,6 +18,7 @@ import { ShapeSource } from "@rnmapbox/maps";
 import { LineLayer } from "@rnmapbox/maps";
 import { UserLocation } from "@rnmapbox/maps";
 import { PointAnnotation } from "@rnmapbox/maps";
+
 import { LatLng } from "@/lib/shared";
 import { straightLine } from "@/lib/mapbox-route";
 import { hasMapboxToken, configureMapbox } from "@/lib/mapbox";
@@ -45,11 +46,6 @@ function geojsonForRoute(route: MapRoute): GeoJSON.Feature<GeoJSON.LineString> {
     },
     properties: {},
   };
-}
-
-export interface MapRoute {
-  from: LatLng;
-  to: LatLng;
 }
 
 export function MapboxMap({
@@ -87,21 +83,24 @@ export function MapboxMap({
         <ShapeSource id="route" shape={geojsonForRoute(route)}>
           <LineLayer
             id="route-line"
-            paint={{
-              "line-color": "#E1251B",
-              "line-width": 4,
-              "line-opacity": 0.95,
+            style={{
+              lineColor: "#E1251B",
+              lineWidth: 4,
+              lineOpacity: 0.95,
             }}
           />
         </ShapeSource>
       )}
 
-      {pins?.map((pin) => (        <PointAnnotation
+      {pins?.map((pin) => (
+        <PointAnnotation
           key={pin.id}
           id={pin.id}
           coordinate={[pin.coordinate.lng, pin.coordinate.lat]}
           title={pin.title ?? undefined}
-        />
+        >
+          <Text>{pin.title ?? ""}</Text>
+        </PointAnnotation>
       ))}
 
       <UserLocation />
@@ -112,5 +111,10 @@ export function MapboxMap({
 const styles = StyleSheet.create({
   map: {
     ...StyleSheet.absoluteFillObject,
+  },
+  pinLabel: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "600",
   },
 });
