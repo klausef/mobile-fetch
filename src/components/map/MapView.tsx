@@ -1,0 +1,1102 @@
+/**
+ * The map, drawn with maplibre-gl.
+ *
+ * ── Why this file changed ────────────────────────────────────────────────────
+ * It used to be a hand-rolled renderer: Web Mercator maths, a grid of raster
+ * <img> tiles, and its own pointer handling for pan, pinch, and the draggable
+ * pin. That worked, but every improvement to the map — street labels, smoother
+ * gestures, a route that follows roads — meant writing more of the renderer.
+ * maplibre-gl does all of it on the GPU, so this file is now about *what* to
+ * draw rather than *how* to draw it.
+ *
+ * The public props are unchanged, which is the point: CommuterHome, SetLocation
+ * and RiderRide were not touched. They still pass `center`, `zoom`, `markers`,
+ * `route`, `onPick`, `followTarget` and read the same `MapMarker` shape.
+ *
+ * ── The three props that need care ───────────────────────────────────────────
+ * `center`, `zoom` and `followTarget` describe where the camera should be, but
+ * the map is also driven directly by the user's fingers, and by itself while it
+ * glides. Naively re-applying a prop on every render would fight the gesture
+ * that produced it.
+ *
+ * So a prop is applied only when the camera is genuinely somewhere else, and
+ * never while a gesture or an animation of ours is in flight. SetLocation
+ * mirrors the map back into `center` through `onViewChange`, which means every
+ * frame of our own `easeTo` comes back as a new `center` prop; without the
+ * `glidingRef` guard each echo would start a fresh animation aimed at where the
+ * camera already was, and the glide would stall on the spot. A manual zoom
+ * survives for a different reason: the effects are keyed on the prop's *value*,
+ * so a constant `zoom={14}` never drags the user back out of their gate.
+ *
+ * ── Real-time driver location ────────────────────────────────────────────────
+ * The rider marker is repositioned with `glideMarker`, which eases between the
+ * previous and the new fix over roughly a second instead of teleporting. Rider
+ * GPS arrives about every two seconds (see `use-location-streaming`), so an
+ * instant jump reads as a stutter; a glide reads as movement.
+ */
+
+import {
+  Map as MapLibreMap,
+  Marker,
+  type EaseToOptions,
+  type GeoJSONSource,
+} from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+import { Crosshair, Minus, Plus } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CURRENT_LOCATION_COLOR } from "@/lib/location";
+import { LONG_PRESS_MS, LONG_PRESS_TOLERANCE_PX } from "@/lib/search";
+import { clampToRegion, REGION } from "@/lib/region";
+import {
+  MAP_ATTRIBUTION,
+  fallbackMapStyle,
+  mapStyle,
+  type LatLng,
+} from "@/lib/map-service";
+import { fetchRoute, straightGeometry } from "@/lib/routing-service";
+import { cn } from "@/lib/utils";
+
+export type MapMarkerKind =
+  | "pickup"
+  | "destination"
+  | "rider"
+  | "current"
+  | "flag";
+
+/**
+ * One point of demand for the busy-area heatmap.
+ *
+ * A weight rather than a bare coordinate because the same grid cell can be hit
+ * by several requests; maplibre scales the heat by it, so a cell with four
+ * requests warms visibly more than a cell with one.
+ */
+export interface HeatmapPoint {
+  lat: number;
+  lng: number;
+  weight: number;
+}
+
+export interface MapMarker {
+  id: string;
+  lat: number;
+  lng: number;
+  kind?: MapMarkerKind;
+  label?: string;
+  pulse?: boolean;
+  /**
+   * Compass bearing in degrees clockwise from north, for the rider marker.
+   *
+   * Absent means "unknown", which is a real state and not a bug: the browser
+   * Geolocation API reports a heading only when the device has one, and a
+   * marker that spun to a default angle would be a lie. With no heading the
+   * car simply points the way it is drawn.
+   */
+  heading?: number | null;
+}
+
+interface MapViewProps {
+  center: LatLng;
+  zoom?: number;
+  markers?: MapMarker[];
+  route?: [LatLng, LatLng][] | null;
+  onPick?: (point: LatLng) => void;
+  /**
+   * Fired when a press is held on the map, for dropping a pin deliberately.
+   *
+   * Distinct from `onPick` because a tap and a press are different intentions:
+   * a tap means "I am pointing at that", a press means "put the pin right
+   * here". Sharing one handler made the two indistinguishable and the pin
+   * landed wherever a thumb happened to land.
+   */
+  onLongPress?: (point: LatLng) => void;
+  /**
+   * Called when a rendered pin is tapped.
+   *
+   * Supplying this makes the pins clickable; without it they are transparent to
+   * touch, so a tap lands on the map underneath and behaves as a `onPick`. That
+   * default matters on the pickup screen, where a stray pin must not swallow
+   * the tap that was meant to move it.
+   */
+  onMarkerClick?: (marker: MapMarker) => void;
+  /**
+   * The point the user may drag to fine-tune — normally whichever end of the
+   * trip is currently active. Rendered as a draggable pin on top of the map.
+   */
+  dragPoint?: LatLng | null;
+  /** Fired continuously while the pin is dragged. */
+  onDragPointChange?: (point: LatLng) => void;
+  /** Fired once when the drag is released, for snapping to a real address. */
+  onDragPointEnd?: (point: LatLng) => void;
+  /** When set, the map keeps this point centered until the user pans away. */
+  followTarget?: LatLng | null;
+  /**
+   * Where the "recentre" control goes.
+   *
+   * Distinct from `followTarget` because they answer different questions.
+   * `followTarget` is the point the map *follows* on its own — a rider's GPS.
+   * This is where the recentre *button* returns to — normally the commuter's
+   * own position — and after a deliberate pan the two must not become the same
+   * thing: tapping recentre on a booking map should put you back at your own
+   * location, not start following a marker.
+   */
+  recenterTarget?: LatLng | null;
+  interactive?: boolean;
+  className?: string;
+  onViewChange?: (center: LatLng, zoom: number) => void;
+  /**
+   * Demand points drawn as a density heatmap beneath the route.
+   *
+   * Optional and additive: a screen that does not pass it renders exactly as
+   * before. Used by the rider's dashboard to answer "where should I wait?"
+   * without the rider having to read a list of pins.
+   */
+  heatmap?: HeatmapPoint[] | null;
+}
+
+/** Route styling. Brand red with a white casing, so it reads over any basemap. */
+const ROUTE_COLOR = "#e1251b";
+const ROUTE_CASING = "#ffffff";
+const ROUTE_SOURCE = "fetch-route";
+
+/** Source id for the demand heatmap; see the layer effect for its paint. */
+const HEATMAP_SOURCE = "fetch-demand";
+
+/** How long the rider marker takes to glide from one GPS fix to the next. */
+const MARKER_GLIDE_MS = 1100;
+
+/** Longer than this in one hop is a re-seed or a new ride, so snap instead. */
+const MARKER_SNAP_DEGREES = 0.05;
+
+/** Camera transitions, in ms. Short enough to feel direct on a phone. */
+const EASE_CENTER_MS = 500;
+const EASE_FOLLOW_MS = 800;
+
+/**
+ * How long to wait for the vector style before assuming it will never arrive.
+ *
+ * Generous, because on a slow connection a working style is worth waiting for
+ * and swapping early would throw away the better basemap for nothing. Short
+ * enough that a rider is not staring at an empty box wondering whether the app
+ * is broken.
+ */
+const STYLE_LOAD_TIMEOUT_MS = 6000;
+
+const FLAG_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>`;
+
+const CAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>`;
+
+const DRAG_PIN_HTML = `<svg viewBox="0 0 24 36" width="32" height="48" aria-hidden="true" style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3))"><path d="M12 0C5.4 0 0 5.2 0 11.6 0 20.4 12 36 12 36s12-15.6 12-24.4C24 5.2 18.6 0 12 0z" fill="${ROUTE_COLOR}"/><circle cx="12" cy="11.6" r="4.2" fill="#ffffff"/></svg><span style="position:absolute;left:50%;top:100%;transform:translateX(-50%);margin-top:2px;white-space:nowrap;border-radius:9999px;background:rgba(255,255,255,0.95);padding:1px 8px;font-size:10px;font-weight:500;letter-spacing:-0.01em;box-shadow:0 1px 2px rgba(0,0,0,0.12)">Adjusting</span>`;
+
+/** Markers are built as HTML strings, so any user-supplied label is escaped. */
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      default:
+        return "&#39;";
+    }
+  });
+}
+
+/**
+ * The pin markup for a marker.
+ *
+ * A string rather than a React subtree because maplibre owns the marker's DOM
+ * element and positions it itself; handing React the same node would mean two
+ * owners. The classes are the same ones the previous renderer used, so the map
+ * looks unchanged.
+ */
+function pinHtml(marker: MapMarker): string {
+  const kind = marker.kind ?? "destination";
+  const label = marker.label
+    ? `<span class="mt-1 ${
+        kind === "rider" ? "" : "inline-block max-w-[9rem] truncate "
+      }rounded-full bg-background/90 px-2 py-0.5 text-[10px] font-medium tracking-tight text-foreground shadow-sm ring-1 ring-border">${escapeHtml(
+        marker.label,
+      )}</span>`
+    : "";
+
+  if (kind === "rider") {
+    // The car rotates to the rider's reported bearing. The glyph points north by
+    // default, so the rotation is the raw heading; the transition is what makes
+    // a turn read as a turn rather than as the marker jumping to a new angle.
+    const heading =
+      typeof marker.heading === "number" && Number.isFinite(marker.heading)
+        ? marker.heading
+        : null;
+    const car = `<div class="flex size-9 items-center justify-center rounded-full border border-border bg-primary text-primary-foreground shadow-lg shadow-black/20">${CAR_SVG}</div>`;
+    const rotated =
+      heading === null
+        ? car
+        : `<span style="display:inline-flex;transition:transform 600ms ease-out;transform:rotate(${heading}deg)">${car}</span>`;
+    return `${rotated}${label}`;
+  }
+
+  if (kind === "flag") {
+    // The drop-off end of a trip: a filled banner rather than a hollow dot, so
+    // a driver glancing at the map mid-drive can tell "where I am going" from
+    // "where I am going first" without reading the label.
+    return `<span class="flex size-5 items-center justify-center rounded-full border border-primary bg-primary text-primary-foreground shadow-md">${FLAG_SVG}</span>${label}`;
+  }
+
+  if (kind === "current") {
+    // Blue, deliberately, and not `bg-primary`: see CURRENT_LOCATION_COLOR. The
+    // halo is inline rather than a `bg-primary/15` utility because the colour
+    // is a constant rather than a theme token — this dot must stay blue in both
+    // light and dark, since "where I am" is a fact about the map, not about
+    // the brand's surface treatment.
+    return `<span class="relative flex size-4 items-center justify-center"><span class="absolute inline-flex size-9 animate-ping rounded-full" style="background:${CURRENT_LOCATION_COLOR}2e"></span><span class="relative inline-flex size-4 rounded-full border-2 border-background shadow-md" style="background:${CURRENT_LOCATION_COLOR}"></span></span>`;
+  }
+
+  const filled = kind === "pickup";
+  // `transition` on the dot is the hover affordance: a pin that grows slightly
+  // under the cursor is the cheapest possible confirmation that the tap that
+  // follows will open this pin and not the map underneath it.
+  return `<span class="flex size-4 items-center justify-center"><span class="flex size-3.5 items-center justify-center rounded-full border-2 shadow-md transition-transform duration-150 hover:scale-125 ${
+    filled ? "border-background bg-primary" : "border-primary bg-background"
+  }"></span></span>${label}`;
+}
+
+/**
+ * Make a pin a tap target, or let taps fall through to the map.
+ *
+ * maplibre markers sit above the canvas, so a pin that is not a tap target
+ * still swallows the tap that was aimed at the map underneath — which is why
+ * this is set explicitly rather than left to the default.
+ */
+function applyPinInteractivity(element: HTMLElement, clickable: boolean) {
+  element.style.pointerEvents = clickable ? "auto" : "none";
+  element.style.cursor = clickable ? "pointer" : "";
+}
+
+/** One live maplibre marker, with the state needed to avoid needless redraws. */
+type MarkerEntry = {
+  marker: Marker;
+  element: HTMLDivElement;
+  kind: MapMarkerKind;
+  label?: string;
+  /** The bearing the pin was last painted with; see the repaint check. */
+  heading?: number | null;
+  /**
+   * The marker data this pin currently represents. Read by the click listener,
+   * which is attached once and must not close over the first render's copy.
+   */
+  latest: MapMarker;
+  /** Pending requestAnimationFrame id for an in-flight glide, if any. */
+  frame?: number;
+};
+
+/**
+ * Move a marker to a new point, gliding rather than jumping.
+ *
+ * A target on the far side of the world is treated as a new marker rather than
+ * a movement — gliding a rider across a province would look like a bug, and the
+ * difference is exactly the hop size.
+ */
+function glideMarker(entry: MarkerEntry, next: MapMarker) {
+  if (entry.frame !== undefined) {
+    cancelAnimationFrame(entry.frame);
+    entry.frame = undefined;
+  }
+
+  const from = entry.marker.getLngLat();
+  const hop = Math.abs(from.lng - next.lng) + Math.abs(from.lat - next.lat);
+  if (hop <= 1e-7 || hop >= MARKER_SNAP_DEGREES) {
+    entry.marker.setLngLat([next.lng, next.lat]);
+    return;
+  }
+
+  const startLng = from.lng;
+  const startLat = from.lat;
+  const startedAt = performance.now();
+
+  const step = (now: number) => {
+    const progress = Math.min(1, (now - startedAt) / MARKER_GLIDE_MS);
+    // Ease-out: quick off the mark, settling as it arrives.
+    const eased = 1 - (1 - progress) * (1 - progress);
+    entry.marker.setLngLat([
+      startLng + (next.lng - startLng) * eased,
+      startLat + (next.lat - startLat) * eased,
+    ]);
+    entry.frame = progress < 1 ? requestAnimationFrame(step) : undefined;
+  };
+
+  entry.frame = requestAnimationFrame(step);
+}
+
+/**
+ * The route geometry to draw, in `LatLng` order.
+ *
+ * Each segment is routed **separately** and the results are stitched. Routing
+ * the whole chain as one request would draw a road that ignores the pickup
+ * entirely — the line would run from the rider straight to the destination,
+ * which is not the trip anyone is taking, and would look especially wrong on a
+ * tracking screen where the leg the commuter cares about is rider → pickup.
+ *
+ * The straight line is derived during render — it is pure and cheap, and it is
+ * what shows immediately while the directions requests are in flight (and what
+ * a keyless install keeps forever). Only the road route needs state, because
+ * only it arrives asynchronously; it is tagged with the endpoints it was
+ * fetched for so a late answer for a previous trip is never drawn over the
+ * current one.
+ *
+ * The fetch is keyed on the endpoints as a string because callers rebuild the
+ * `route` array on every render — depending on the array itself would refetch
+ * continuously.
+ */
+function useRouteGeometry(segments: [LatLng, LatLng][] | null): LatLng[] {
+  const key = (segments ?? [])
+    .map(
+      ([from, to]) =>
+        `${from.lat},${from.lng}->${to.lat},${to.lng}`,
+    )
+    .join("|");
+
+  const [road, setRoad] = useState<{ key: string; points: LatLng[] } | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (!segments || segments.length === 0) return;
+    let cancelled = false;
+    void Promise.all(segments.map(([from, to]) => fetchRoute(from, to))).then(
+      (routes) => {
+        if (cancelled) return;
+        // A null route is the documented "use the straight line" answer, so a
+        // segment that could not be routed contributes its endpoints and the
+        // rest of the chain still follows roads.
+        const points: LatLng[] = [];
+        segments.forEach(([from, to], index) => {
+          const chain = routes[index] ?? [from, to];
+          for (const point of chain) {
+            // Segments share an endpoint; pushing it twice would draw a
+            // zero-length kink at the joint.
+            const last = points[points.length - 1];
+            if (!last || last.lat !== point.lat || last.lng !== point.lng) {
+              points.push(point);
+            }
+          }
+        });
+        setRoad({ key, points });
+      },
+      // `fetchRoute` does not throw — every failure collapses to null — so this
+      // is unreachable in practice. Falling back to the straight line anyway is
+      // the same answer, not a swallowed error: an exception here must not
+      // leave the map with no line at all.
+      () => {
+        if (!cancelled) setRoad({ key, points: straightGeometry(segments) });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+    // Keyed on the endpoint string, not the objects; see the note above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  if (road && road.key === key) return road.points;
+  return straightGeometry(segments);
+}
+
+export function MapView({
+  center,
+  zoom: zoomProp = 14,
+  markers = [],
+  route = null,
+  heatmap = null,
+  onPick,
+  dragPoint = null,
+  onDragPointChange,
+  onDragPointEnd,
+  followTarget = null,
+  recenterTarget = null,
+  interactive = true,
+  className,
+  onViewChange,
+  onMarkerClick,
+  onLongPress,
+}: MapViewProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<MapLibreMap | null>(null);
+  const markersRef = useRef(new Map<string, MarkerEntry>());
+  const dragRef = useRef<{ marker: Marker; element: HTMLDivElement } | null>(
+    null,
+  );
+  const [ready, setReady] = useState(false);
+  /*
+   * True once the map has given up on the configured provider and fallen back
+   * to keyless OpenStreetMap tiles. The map still works, so this is not an
+   * error state in the app's own terms — but it is worth saying out loud,
+   * because the alternative is a rider deciding the app is broken when what is
+   * actually broken is one API key.
+   */
+  const [degraded, setDegraded] = useState(false);
+
+  /** Cleared when the user pans, so following never fights a gesture. */
+  const followRef = useRef(true);
+
+  /**
+   * True while a pointer is down. Prop sync stands aside during a gesture; the
+   * prop values a pan produces equal the ones the map already has, so there is
+   * nothing to apply anyway, and skipping avoids any chance of a fight.
+   */
+  const interactingRef = useRef(false);
+
+  /**
+   * True while a camera glide we started is still running.
+   *
+   * `Map.isEasing()` exists at runtime but is not on the published `Map` type,
+   * so the window is tracked here instead: set when `glide()` runs, cleared by a
+   * timer that outlives the animation. A token guards against an earlier glide's
+   * timer clearing the flag while a later one is still in flight.
+   */
+  const glidingRef = useRef(false);
+  const glideTokenRef = useRef(0);
+
+  /**
+   * The prop values already applied. Rendering the initial view from a ref
+   * keeps the mount effect free of dependencies, so the map is never torn down
+   * and rebuilt when a prop changes.
+   */
+  const initial = useRef({ center, zoom: zoomProp, interactive });
+
+  // Latest callbacks, read by map listeners so they never close over a stale
+  // render.
+  const latest = useRef({
+    onPick,
+    onViewChange,
+    onDragPointChange,
+    onDragPointEnd,
+    onMarkerClick,
+    onLongPress,
+  });
+  useEffect(() => {
+    latest.current = {
+      onPick,
+      onViewChange,
+      onDragPointChange,
+      onDragPointEnd,
+      onMarkerClick,
+      onLongPress,
+    };
+  });
+
+  /** Whether pins should accept taps at all; also a marker-effect dependency. */
+  const clickable = onMarkerClick !== undefined;
+
+  const routeGeometry = useRouteGeometry(route);
+  /** Serialised geometry, so the route layer updates only when the line moves. */
+  const routeKey = routeGeometry
+    .map((point) => `${point.lat},${point.lng}`)
+    .join("|");
+  const routeRef = useRef(routeGeometry);
+  useEffect(() => {
+    routeRef.current = routeGeometry;
+  });
+
+  /**
+   * Move the camera under our own control, marking the glide so the prop
+   * effects ignore the echoes it produces.
+   */
+  const glide = useCallback((options: EaseToOptions) => {
+    const map = mapRef.current;
+    if (!map) return;
+    glideTokenRef.current += 1;
+    const token = glideTokenRef.current;
+    glidingRef.current = true;
+    map.easeTo(options);
+    window.setTimeout(
+      () => {
+        if (glideTokenRef.current === token) glidingRef.current = false;
+      },
+      (options.duration ?? 0) + 150,
+    );
+  }, []);
+
+  /* ── Create the map ─────────────────────────────────────────────────────── */
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    // Captured once: the ref object itself never changes, and reading it inside
+    // the cleanup below trips the exhaustive-deps rule otherwise.
+    const markerEntries = markersRef.current;
+
+    const map = new MapLibreMap({
+      container,
+      style: mapStyle(),
+      center: [initial.current.center.lng, initial.current.center.lat],
+      zoom: initial.current.zoom,
+      attributionControl: false,
+      interactive: initial.current.interactive,
+      // The province is the world. Without this the map is a generic slippy map:
+      // a pinch goes to the satellite, a stray drag lands in Kota Kinabalu, and
+      // the tiles loaded outside the region are ones nobody here rides in. Pinned
+      // to Bukidnon's box, with a margin baked into the bounds themselves for
+      // the barangays that sit just over the line in OSM's reckoning.
+      maxBounds: [
+        [REGION.bounds.minLng, REGION.bounds.minLat],
+        [REGION.bounds.maxLng, REGION.bounds.maxLat],
+      ],
+    });
+    mapRef.current = map;
+
+    const handleDown = () => {
+      interactingRef.current = true;
+    };
+    const handleUp = () => {
+      interactingRef.current = false;
+    };
+
+    /*
+     * A key that is present but wrong is only discovered here.
+     *
+     * `mapStyle()` only falls back at build time, when the key is *absent*. A
+     * key that is set but expired, over quota, or blocked by an origin rule the
+     * app did not anticipate makes MapLibre fail to load the style, and the
+     * rider is left looking at a blank rectangle with no way to tell that the
+     * map is the broken part rather than the app. Two things catch it: the
+     * style error itself, and a watchdog for the case where it fails quietly
+     * without ever emitting one.
+     *
+     * Swapped at most once, and only while the primary style is still the
+     * active one — otherwise a network that is merely offline turns this into
+     * an endless retry loop.
+     */
+    let onPrimaryStyle = true;
+    const fallBackToKeyless = () => {
+      if (!onPrimaryStyle) return;
+      onPrimaryStyle = false;
+      window.clearTimeout(styleWatchdog);
+      map.setStyle(fallbackMapStyle());
+      setDegraded(true);
+    };
+    // `unknown` rather than `Error`: MapLibre types the payload as its own
+    // `ErrorLike`, and narrowing to `Error` here is a type error rather than a
+    // safety gain — all this does is ask whether there was a failure at all.
+    const handleStyleError = (event: { error?: unknown }) => {
+      if (event?.error) fallBackToKeyless();
+    };
+    map.on("error", handleStyleError);
+    const styleWatchdog = window.setTimeout(() => {
+      if (!map.loaded()) fallBackToKeyless();
+    }, STYLE_LOAD_TIMEOUT_MS);
+
+    map.on("load", () => {
+      window.clearTimeout(styleWatchdog);
+      setReady(true);
+    });
+    map.on("click", (event) => {
+      latest.current.onPick?.({ lat: event.lngLat.lat, lng: event.lngLat.lng });
+    });
+
+    /*
+     * Long press → drop a pin.
+     *
+     * Driven from the container's own pointer events rather than maplibre's,
+     * because the press has to be *cancelled* by a pan. maplibre emits its
+     * gesture events but not "the user moved far enough that this is no longer
+     * a press", and without that check every attempt to scroll the map drops a
+     * pin wherever the finger happened to be at the halfway point.
+     *
+     * `pointerdown` is captured rather than bubbled: maplibre calls
+     * preventDefault on its own pointer handling, and a listener that never
+     * fires is worse than no press gesture at all.
+     *
+     * The timer is per-press and cleared on every exit path, so a cancelled
+     * press can never fire later against a stale position.
+     */
+    let pressTimer: number | undefined;
+    let pressOrigin: { x: number; y: number } | null = null;
+
+    const cancelPress = () => {
+      if (pressTimer !== undefined) {
+        window.clearTimeout(pressTimer);
+        pressTimer = undefined;
+      }
+      pressOrigin = null;
+    };
+
+    const handlePressStart = (event: PointerEvent) => {
+      cancelPress();
+      if (event.button !== 0 && event.pointerType === "mouse") return;
+      // The zoom and recentre controls live inside the map container, so a
+      // press on "+" is a press on the map as far as this listener is
+      // concerned — and holding a button to zoom twice used to drop a pin in
+      // whatever direction the map was pointing at the halfway point.
+      if ((event.target as HTMLElement | null)?.closest("button")) return;
+      pressOrigin = { x: event.clientX, y: event.clientY };
+      const at = { x: event.clientX, y: event.clientY };
+      pressTimer = window.setTimeout(() => {
+        pressTimer = undefined;
+        const rect = container.getBoundingClientRect();
+        // The pointer is unprojected through the map at the moment the timer
+        // fires, not at pointerdown: the map may have panned in between, and
+        // using the stale coordinates would drop the pin where the finger
+        // started rather than where it is resting.
+        const point = map.unproject([
+          at.x - rect.left,
+          at.y - rect.top,
+        ]);
+        latest.current.onLongPress?.({
+          lat: point.lat,
+          lng: point.lng,
+        });
+      }, LONG_PRESS_MS);
+    };
+
+    const handlePressMove = (event: PointerEvent) => {
+      if (!pressOrigin) return;
+      const moved =
+        Math.abs(event.clientX - pressOrigin.x) +
+        Math.abs(event.clientY - pressOrigin.y);
+      if (moved > LONG_PRESS_TOLERANCE_PX) cancelPress();
+    };
+
+    container.addEventListener("pointerdown", handlePressStart, {
+      capture: true,
+    });
+    container.addEventListener("pointermove", handlePressMove, {
+      capture: true,
+    });
+    // Without this, the press timer outlives the finger: every short tap on
+    // the map still fired `onLongPress` half a second later, so the "confirm
+    // this pin" card opened after any tap at all. `pointerup` and
+    // `pointerleave` are both needed — the first for a normal tap, the second
+    // for a finger that slides off the map without lifting.
+    container.addEventListener("pointerup", cancelPress, { capture: true });
+    container.addEventListener("pointercancel", cancelPress, {
+      capture: true,
+    });
+    container.addEventListener("pointerleave", cancelPress, {
+      capture: true,
+    });
+    map.on("move", () => {
+      const next = map.getCenter();
+      latest.current.onViewChange?.(
+        { lat: next.lat, lng: next.lng },
+        map.getZoom(),
+      );
+    });
+    // Also report the settled view. An eased move fires `move` on every frame,
+    // so a caller that mirrors the map into state would otherwise be left
+    // holding a mid-animation centre once the glide finished.
+    map.on("moveend", () => {
+      const next = map.getCenter();
+      latest.current.onViewChange?.(
+        { lat: next.lat, lng: next.lng },
+        map.getZoom(),
+      );
+    });
+    // Any deliberate pan means the commuter is looking somewhere else; stop
+    // dragging the camera back to the rider.
+    map.on("dragstart", () => {
+      followRef.current = false;
+    });
+
+    container.addEventListener("pointerdown", handleDown);
+    window.addEventListener("pointerup", handleUp);
+    window.addEventListener("pointercancel", handleUp);
+
+    return () => {
+      cancelPress();
+      window.clearTimeout(styleWatchdog);
+      map.off("error", handleStyleError);
+      container.removeEventListener("pointerdown", handlePressStart, {
+        capture: true,
+      });
+      container.removeEventListener("pointermove", handlePressMove, {
+        capture: true,
+      });
+      container.removeEventListener("pointerup", cancelPress, {
+        capture: true,
+      });
+      container.removeEventListener("pointercancel", cancelPress, {
+        capture: true,
+      });
+      container.removeEventListener("pointerleave", cancelPress, {
+        capture: true,
+      });
+      container.removeEventListener("pointerdown", handleDown);
+      window.removeEventListener("pointerup", handleUp);
+      window.removeEventListener("pointercancel", handleUp);
+
+      for (const entry of markerEntries.values()) {
+        if (entry.frame !== undefined) cancelAnimationFrame(entry.frame);
+        entry.marker.remove();
+      }
+      markerEntries.clear();
+      dragRef.current?.marker.remove();
+      dragRef.current = null;
+
+      map.remove();
+      mapRef.current = null;
+      setReady(false);
+    };
+  }, []);
+
+  /* ── Follow the moving point (the rider, usually) ───────────────────────── */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !followTarget || !followRef.current) return;
+    glide({
+      // Same rule as above, for the rider being followed.
+      center: (() => {
+        const inside = clampToRegion(followTarget);
+        return [inside.lng, inside.lat];
+      })(),
+      duration: EASE_FOLLOW_MS,
+    });
+    // Keyed on the coordinates: a caller that rebuilds `followTarget` each
+    // render must not restart the glide.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [followTarget?.lat, followTarget?.lng]);
+
+  /* ── Apply prop-driven camera changes ───────────────────────────────────── */
+  // `interactingRef` and `glidingRef` are what separate "the caller moved the
+  // camera" from "the camera is already moving there". Everything a pan or one
+  // of our own glides produces arrives as an echo of the current camera, so once
+  // both guards pass there is genuinely somewhere else to go.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (interactingRef.current || glidingRef.current) return;
+    const current = map.getCenter();
+    if (
+      Math.abs(current.lat - center.lat) < 1e-9 &&
+      Math.abs(current.lng - center.lng) < 1e-9
+    ) {
+      return;
+    }
+    glide({
+      // Clamped, because `center` can arrive from outside the province — a GPS
+      // fix taken in Davao City, or a search result the filter let through. The
+      // map stays on Bukidnon; the point itself is validated separately, by the
+      // screen that owns it, rather than quietly moved here.
+      center: (() => {
+        const inside = clampToRegion(center);
+        return [inside.lng, inside.lat];
+      })(),
+      duration: EASE_CENTER_MS,
+    });
+  }, [center.lat, center.lng, glide]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (interactingRef.current || glidingRef.current) return;
+    if (Math.abs(map.getZoom() - zoomProp) < 1e-6) return;
+    glide({ zoom: zoomProp, duration: EASE_CENTER_MS });
+  }, [zoomProp, glide]);
+
+  /* ── Markers ────────────────────────────────────────────────────────────── */
+  // Deliberately not gated on `ready`: a maplibre marker is a DOM element and
+  // needs no basemap, so the pins still show if the style document is slow or
+  // unreachable. Only the route layer below waits for the style.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const seen = new Set<string>();
+    for (const next of markers) {
+      seen.add(next.id);
+      const kind = next.kind ?? "destination";
+      let entry = markersRef.current.get(next.id);
+
+      if (!entry) {
+        const element = document.createElement("div");
+        element.className = "flex flex-col items-center";
+        const marker = new Marker({ element, anchor: "center" });
+        marker.setLngLat([next.lng, next.lat]).addTo(map);
+        const created: MarkerEntry = {
+          marker,
+          element,
+          kind,
+          label: next.label,
+          heading: next.heading,
+          latest: next,
+        };
+        markersRef.current.set(next.id, created);
+
+        // Attached once. It reads `created.latest` rather than closing over
+        // `next`, so a pin that has since been re-painted still reports the
+        // place it is currently showing.
+        element.addEventListener("click", (event) => {
+          event.stopPropagation();
+          latest.current.onMarkerClick?.(created.latest);
+        });
+        entry = created;
+      }
+
+      entry.latest = next;
+      applyPinInteractivity(entry.element, clickable);
+
+      // Repaint only when the pin would actually look different. A rider
+      // turning on the spot does not move, so its bearing has to be part of the
+      // comparison or the car would keep pointing the way it was going when it
+      // arrived.
+      if (
+        entry.kind !== kind ||
+        entry.label !== next.label ||
+        entry.heading !== next.heading
+      ) {
+        entry.kind = kind;
+        entry.label = next.label;
+        entry.heading = next.heading;
+        entry.element.innerHTML = pinHtml(next);
+      }
+
+      glideMarker(entry, next);
+    }
+
+    for (const [id, entry] of markersRef.current) {
+      if (seen.has(id)) continue;
+      if (entry.frame !== undefined) cancelAnimationFrame(entry.frame);
+      entry.marker.remove();
+      markersRef.current.delete(id);
+    }
+  }, [markers, clickable]);
+
+  /* ── Demand heatmap ─────────────────────────────────────────────────────── */
+  // Added before the route layer, so it sits *under* the line rather than
+  // washing it out: maplibre stacks layers in insertion order, and the route
+  // is the thing a driver follows while the heat is only context.
+  const heatmapKey = (heatmap ?? [])
+    .map((point) => `${point.lat},${point.lng},${point.weight}`)
+    .join("|");
+  const heatmapRef = useRef<HeatmapPoint[]>(heatmap ?? []);
+  useEffect(() => {
+    heatmapRef.current = heatmap ?? [];
+  });
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+
+    const points = heatmapRef.current;
+    const data = {
+      type: "FeatureCollection" as const,
+      features: points.map((point) => ({
+        type: "Feature" as const,
+        properties: { weight: point.weight },
+        geometry: {
+          type: "Point" as const,
+          coordinates: [point.lng, point.lat],
+        },
+      })),
+    };
+
+    const source = map.getSource(HEATMAP_SOURCE) as GeoJSONSource | undefined;
+    if (source) {
+      source.setData(data);
+      return;
+    }
+
+    map.addSource(HEATMAP_SOURCE, { type: "geojson", data });
+    map.addLayer({
+      id: `${HEATMAP_SOURCE}-layer`,
+      type: "heatmap",
+      source: HEATMAP_SOURCE,
+      paint: {
+        // A cell hit by one request is a faint smudge; a cell hit by ten is a
+        // solid patch, which is the whole point of a density map.
+        "heatmap-weight": [
+          "interpolate",
+          ["linear"],
+          ["get", "weight"],
+          1,
+          0.4,
+          10,
+          1,
+        ],
+        "heatmap-intensity": 0.7,
+        "heatmap-radius": 45,
+        "heatmap-opacity": 0.7,
+        // Brand maroon through to gold, so the layer reads as part of FETCH
+        // rather than as a stock heatmap in primary colours.
+        "heatmap-color": [
+          "interpolate",
+          ["linear"],
+          ["heatmap-density"],
+          0,
+          "rgba(225,37,27,0)",
+          0.2,
+          "rgba(225,37,27,0.35)",
+          0.5,
+          "rgba(225,37,27,0.6)",
+          1,
+          "rgba(255,199,44,0.85)",
+        ],
+      },
+    });
+    // Keyed on the points, not the array identity — the caller rebuilds the
+    // array every render, and re-setting identical data would re-parse it.
+  }, [heatmapKey, ready]);
+
+  /* ── Route line ─────────────────────────────────────────────────────────── */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+
+    const points = routeRef.current;
+    const data =
+      points.length >= 2
+        ? {
+            type: "Feature" as const,
+            properties: {},
+            geometry: {
+              type: "LineString" as const,
+              coordinates: points.map((point) => [point.lng, point.lat]),
+            },
+          }
+        : { type: "FeatureCollection" as const, features: [] };
+
+    const source = map.getSource(ROUTE_SOURCE) as GeoJSONSource | undefined;
+    if (source) {
+      source.setData(data);
+      return;
+    }
+    if (points.length < 2) return;
+
+    map.addSource(ROUTE_SOURCE, { type: "geojson", data });
+    map.addLayer({
+      id: `${ROUTE_SOURCE}-casing`,
+      type: "line",
+      source: ROUTE_SOURCE,
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": ROUTE_CASING,
+        "line-width": 8,
+        "line-opacity": 0.9,
+      },
+    });
+    map.addLayer({
+      id: `${ROUTE_SOURCE}-line`,
+      type: "line",
+      source: ROUTE_SOURCE,
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": ROUTE_COLOR, "line-width": 4 },
+    });
+    // Keyed on the drawn geometry, not on the array identity: `routeGeometry`
+    // is rebuilt on every render, and re-setting identical data each time would
+    // make maplibre re-parse the line continuously.
+  }, [routeKey, ready]);
+
+  /* ── Draggable pin, for fine-tuning an end of the trip ──────────────────── */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (!dragPoint) {
+      dragRef.current?.marker.remove();
+      dragRef.current = null;
+      return;
+    }
+
+    if (!dragRef.current) {
+      const element = document.createElement("div");
+      element.className = "relative cursor-grab touch-none";
+      element.innerHTML = DRAG_PIN_HTML;
+      const marker = new Marker({ element, draggable: true, anchor: "bottom" });
+      marker.setLngLat([dragPoint.lng, dragPoint.lat]).addTo(map);
+      marker.on("drag", () => {
+        const position = marker.getLngLat();
+        latest.current.onDragPointChange?.({
+          lat: position.lat,
+          lng: position.lng,
+        });
+      });
+      marker.on("dragend", () => {
+        const position = marker.getLngLat();
+        latest.current.onDragPointEnd?.({
+          lat: position.lat,
+          lng: position.lng,
+        });
+      });
+      dragRef.current = { marker, element };
+      return;
+    }
+
+    dragRef.current.marker.setLngLat([dragPoint.lng, dragPoint.lat]);
+    // Keyed on the coordinates for the same reason as `followTarget`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragPoint?.lat, dragPoint?.lng]);
+
+  /* ── Controls ───────────────────────────────────────────────────────────── */
+  const zoomBy = (delta: number) => {
+    const map = mapRef.current;
+    if (!map) return;
+    const next = Math.min(
+      map.getMaxZoom(),
+      Math.max(map.getMinZoom(), map.getZoom() + delta),
+    );
+    glide({ zoom: next, duration: 250 });
+  };
+
+  const recenter = () => {
+    if (!mapRef.current) return;
+    const target = recenterTarget ?? followTarget ?? center;
+    if (!target) return;
+    // Only follow *after* the control is used: tapping recentre is an explicit
+    // "put me back here", so from then on the map tracks that point until the
+    // commuter pans away again (see the `dragstart` handler).
+    followRef.current = Boolean(recenterTarget ?? followTarget);
+    glide({ center: [target.lng, target.lat], duration: EASE_CENTER_MS });
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      className={cn("relative overflow-hidden bg-secondary/60", className)}
+    >
+      {/* Controls. 44px on a phone, where these get pressed with a thumb on a
+          moving bus; they shrink back on pointer devices. */}
+      {interactive ? (
+        <div className="absolute right-3 top-3 z-10 flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => zoomBy(1)}
+            aria-label="Zoom in"
+            className="flex size-11 items-center justify-center rounded-full border border-border bg-background/95 text-foreground shadow-sm backdrop-blur transition active:bg-secondary sm:size-10"
+          >
+            <Plus className="size-5 sm:size-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => zoomBy(-1)}
+            aria-label="Zoom out"
+            className="flex size-11 items-center justify-center rounded-full border border-border bg-background/95 text-foreground shadow-sm backdrop-blur transition active:bg-secondary sm:size-10"
+          >
+            <Minus className="size-5 sm:size-4" />
+          </button>
+          <button
+            type="button"
+            onClick={recenter}
+            aria-label="Recenter map"
+            className="flex size-11 items-center justify-center rounded-full border border-border bg-background/95 text-foreground shadow-sm backdrop-blur transition active:bg-secondary sm:size-10"
+          >
+            <Crosshair className="size-5 sm:size-4" />
+          </button>
+        </div>
+      ) : null}
+
+      {degraded ? (
+        <div className="pointer-events-none absolute bottom-5 left-3 z-10">
+          <span className="inline-flex max-w-[80%] items-center gap-1.5 rounded-full bg-background/90 px-2.5 py-1 text-[10px] font-medium tracking-tight text-muted-foreground shadow-sm backdrop-blur">
+            Basic map — live directions and street detail are unavailable
+          </span>
+        </div>
+      ) : null}
+
+      <div className="pointer-events-none absolute bottom-2 left-3 z-10 text-[10px] tracking-tight text-muted-foreground">
+        {MAP_ATTRIBUTION}
+      </div>
+    </div>
+  );
+}

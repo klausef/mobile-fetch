@@ -1,0 +1,63 @@
+{
+  "expo": {  "name": "FETCH",
+  "slug": "fetch-bukidnon",
+  "scheme": "fetchbukidnon",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "userInterfaceStyle": "light",
+  "backgroundColor": "#ffffff",
+  "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.fetchbukidnon.app",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "FETCH uses your location to set your pickup point and to show riders where you are."
+      }
+    },
+    "android": {
+      "package": "com.fetchbukidnon.app",
+      "versionCode": 1,
+      "edgeToEdgeEnabled": true
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "FETCH uses your location to set your pickup point and to show riders where you are."
+        }
+      ],
+      "expo-font",
+      [
+        "@rnmapbox/maps",
+        {
+          "RNMapboxMapsVersion": "11.18.2"
+        }
+      ]
+    ],
+    "extra": {
+      "convexUrl": "https://scrupulous-sheep-213.convex.cloud",
+      "mapTilerKey": "tGTohqdtovQvVH3sbYFL",
+      "orsKey": "",
+      "mapboxAccessToken": "pk.eyJ1Ijoia2xhdXNlZiIsImEiOiJjbXV3MWN2aWQwOWR4MnpteWF3Nzl5czRkIn0.4OqBbmexXNuoJkNwlPhQQQ"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "FETCH uses your location to set your pickup point and to show riders where you are."
+        }
+      ],
+      "expo-font",
+      [
+        "@rnmapbox/maps",
+        {
+          "RNMapboxMapsVersion": "11.18.2"
+        }
+      ]
+    ]
+  }
+}

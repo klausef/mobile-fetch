@@ -1,0 +1,11 @@
+{
+  "// ": "Tests are a separate project on purpose. Folding them into tsconfig.app.json would put every test file in the app build graph; keeping them out of the app build and giving them their own project means `tsc -b` still fails on a type error in a test, without the tests ever being part of what ships.",
+  "//2": "Extends the app config rather than repeating its options, so the two cannot drift apart when the app's settings change. Only the file set and the build info cache differ. The wider lib and the `bun-types` entry exist because the tests import Node built-ins (`node:fs`) and assert on values the app itself never constructs; both are scoped here so Bun's globals stay out of the shipped type graph.",
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["bun-types"]
+  },
+  "include": ["tests", "src", "sst-env.d.ts", "vly-toolbar-readonly.tsx"]
+}

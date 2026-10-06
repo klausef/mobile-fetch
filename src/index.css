@@ -1,0 +1,206 @@
+/* DO NOT CHANGE */
+@import "tailwindcss";
+@import "tw-animate-css";
+@custom-variant dark (&:is(.dark *));
+
+/* DO NOT CHANGE */
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  /* FETCH crest palette — exposed as utilities so screens can reach the brand
+     colours directly (bg-fetch-red, text-fetch-gold, and so on). */
+  --color-fetch-red: var(--brand-red);
+  --color-fetch-red-deep: var(--brand-red-deep);
+  --color-fetch-gold: var(--brand-gold);
+  --color-fetch-ink: var(--brand-ink);
+  --color-fetch-blue: var(--brand-blue);
+  --color-fetch-maroon: var(--brand-maroon);
+  --color-fetch-brick: var(--brand-brick);
+  --color-fetch-royal: var(--brand-royal);
+}
+
+/*
+  FETCH brand palette, taken straight from the crest: red field, gold ring,
+  black rim, blue helmet. Both themes below are built from these four so the
+  app and the badge can never drift apart.
+*/
+:root {
+  --brand-red: #e1251b;
+  --brand-red-deep: #b01710;
+  --brand-gold: #ffc72c;
+  --brand-ink: #14141a;
+  --brand-blue: #1b3fd8;
+  /* Welcome-screen palette, taken from the onboarding artwork: the warm
+     maroon headline ink, the deep brick red of the entry CTAs, and the royal
+     blue of the illustration window. */
+  --brand-maroon: #5c2620;
+  --brand-brick: #a93226;
+  --brand-royal: #2e3a8c;
+}
+
+/* CHANGE VALUES FOR THEME */
+:root {
+  --radius: 0.625rem;
+  --background: #ffffff;
+  --foreground: var(--brand-ink);
+  --card: #ffffff;
+  --card-foreground: var(--brand-ink);
+  --popover: #ffffff;
+  --popover-foreground: var(--brand-ink);
+  --primary: var(--brand-red);
+  --primary-foreground: #ffffff;
+  /* Neutrals are warm-tinted rather than pure gray: the crest is a red field
+     with a gold ring, so even the "empty" surfaces carry a trace of the red
+     instead of reading as a neutral template. */
+  --secondary: #fdeceb;
+  --secondary-foreground: var(--brand-ink);
+  --muted: #f7f1f0;
+  --muted-foreground: #6d6664;
+  --accent: var(--brand-gold);
+  --accent-foreground: var(--brand-ink);
+  --destructive: #c81e1e;
+  --border: #ebdcd9;
+  --input: #ebdcd9;
+  --ring: var(--brand-red);
+  --chart-1: var(--brand-red);
+  --chart-2: var(--brand-gold);
+  --chart-3: var(--brand-blue);
+  --chart-4: var(--brand-ink);
+  --chart-5: #2f8f83;
+  --sidebar: #ffffff;
+  --sidebar-foreground: var(--brand-ink);
+  --sidebar-primary: var(--brand-red);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #fdeceb;
+  --sidebar-accent-foreground: var(--brand-ink);
+  --sidebar-border: #ebdcd9;
+  --sidebar-ring: var(--brand-red);
+}
+
+.dark {
+  --background: #0f0f12;
+  --foreground: #f7f5f2;
+  --card: #17171c;
+  --card-foreground: #f7f5f2;
+  --popover: #17171c;
+  --popover-foreground: #f7f5f2;
+  /* Lifted off the brand red so it holds up against a near-black field. */
+  --primary: #ff4438;
+  --primary-foreground: #ffffff;
+  --secondary: #251b1c;
+  --secondary-foreground: #f7f5f2;
+  --muted: #241b1d;
+  --muted-foreground: #a09a99;
+  --accent: var(--brand-gold);
+  --accent-foreground: var(--brand-ink);
+  --destructive: #ff6b6b;
+  --border: #ffffff1a;
+  --input: #ffffff26;
+  --ring: #ff4438;
+  --chart-1: #ff4438;
+  --chart-2: var(--brand-gold);
+  --chart-3: #5b7bff;
+  --chart-4: #f7f5f2;
+  --chart-5: #4fb3a5;
+  --sidebar: #17171c;
+  --sidebar-foreground: #f7f5f2;
+  --sidebar-primary: #ff4438;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #251b1c;
+  --sidebar-accent-foreground: #f7f5f2;
+  --sidebar-border: #ffffff1a;
+  --sidebar-ring: #ff4438;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    /* With viewport-fit=cover the page draws under the notch and the home
+       indicator. These keep content off both. */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+  button:not([disabled]),
+  [role="button"]:not([disabled]) {
+    cursor: pointer;
+  }
+}
+
+@layer components {
+  /*
+    Safe-area helpers.
+
+    These set padding OUTRIGHT, so they are only safe on elements that have no
+    padding utility of their own — a bare page <main> or a <header> whose inner
+    wrapper carries the padding. The doubled class is deliberate: it makes the
+    rule (0,2,0) so a stray p-5 on the same element cannot silently win on
+    source order and drop the inset.
+
+    If an element already has padding of its own, do NOT add these. Compose the
+    inset into the value instead, e.g.
+      pb-[calc(1.5rem+env(safe-area-inset-bottom))]
+    which adds rather than replaces. That is why the bottom sheets and the
+    full-screen dialog do it that way.
+  */
+  .safe-top.safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  /* Clear the home indicator under a bottom tab bar or sticky action bar. */
+  .safe-bottom.safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* Content that scrolls under the tab bar needs the extra height, not just
+     padding, or the last card is unreachable behind it. */
+  .safe-bottom-offset.safe-bottom-offset {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 4.5rem);
+  }
+  /* A sticky action bar (the Request button) has to park above the tab bar, not
+     behind it. Sticky offsets resolve against the viewport, so the tab bar
+     height and the home indicator both have to be added in. 3.5rem is the bar's
+     height in BottomTabs.tsx — the two must be changed together. */
+  .above-tabs {
+    bottom: calc(3.5rem + env(safe-area-inset-bottom));
+  }
+  @media (min-width: 64rem) {
+    /* From lg up there is no tab bar, so the bar can sit flush. */
+    .above-tabs {
+      bottom: 0;
+    }
+  }
+}
