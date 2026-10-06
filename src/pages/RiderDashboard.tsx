@@ -464,13 +464,6 @@ export default function RiderDashboard() {
           {/* Requests list. The modal takes the nearest one; this is the rest,
               so a rider who declines can still see what else is around. */}
           <section className="rounded-2xl border border-border/70 bg-card p-4 sm:p-5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-medium tracking-tight">
-                {offered ? "Nearby requests" : "Available bookings"}
-              </h2>
-              <Zap className="size-4 text-muted-foreground" />
-            </div>
-
             {!rider.isOnline ? (
               <p className="mt-4 text-xs leading-5 text-muted-foreground">
                 Go online to start receiving ride requests.
@@ -558,6 +551,17 @@ export default function RiderDashboard() {
                   })}
               </ul>
             )}
+
+            {/* The section's own name, under its contents and centred. It reads
+                as the destination of the card rather than a label the rider has
+                to look past to reach the list, and the icon travels with it
+                instead of floating at the far edge of a wide row. */}
+            <div className="mt-4 flex items-center justify-center gap-1.5 border-t border-border/70 pt-3">
+              <Zap className="size-4 text-muted-foreground" />
+              <h2 className="text-sm font-medium tracking-tight">
+                {offered ? "Nearby requests" : "Available bookings"}
+              </h2>
+            </div>
           </section>
 
           {/* The weekly trend line that used to sit here repeated the dark

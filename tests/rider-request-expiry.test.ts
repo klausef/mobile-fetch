@@ -130,10 +130,13 @@ describe("the request is still theirs after the window closes", () => {
   });
 
   test("a passed request can still be accepted from the list", () => {
-    // From the list heading to the modal that follows it: the whole list,
-    // not a fixed character window that silently under-reads when it grows.
+    // From the list's own section to the modal that follows it: the whole list,
+    // not a fixed character window that silently under-reads when it grows. The
+    // anchor is the section, not the "Available bookings" label — that label is
+    // rendered under the list now, so anchoring on it would open the window
+    // after the very rows this test is about.
     const list = dashboard.slice(
-      dashboard.indexOf("Available bookings"),
+      dashboard.indexOf("Requests list."),
       dashboard.indexOf("<RideRequestModal"),
     );
     expect(list).toContain("Accept");

@@ -1,7 +1,6 @@
 import { AccountMenu } from "@/components/AccountMenu";
 import { BottomTabs } from "@/components/BottomTabs";
 import { FetchBrand } from "@/components/FetchBrand";
-import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import {
   Popover,
   PopoverContent,
@@ -152,7 +151,10 @@ export function AppShell({
                 </div>
               </PopoverContent>
             </Popover>
-            <LocaleSwitcher />
+            {/* No language switcher in this row. Every screen carries it here,
+                and it is a setting a person changes once — so it lives in
+                Settings, and the app's busiest row keeps only what is used:
+                notifications and the account. */}
             <AccountMenu />
           </div>
         </div>
