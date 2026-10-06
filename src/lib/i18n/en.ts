@@ -300,7 +300,7 @@ export const en = {
 };
 
 /**
- * The shape of a dictionary.
+ * The shape of a dictionary: the English strings, key for key.
  *
  * Derived from the English object rather than written out by hand, so there is
  * exactly one place a key can be added — here — and every other language is
