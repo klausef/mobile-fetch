@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="FETCH Bukidnon crest">
+  <title>FETCH Bukidnon</title>
+  <!--
+    The FETCH crest, and the single source for the brand mark.
+
+    Pointy-top hexagon: black rim, white gap, gold ring, red field, a black
+    year band across the middle reading 20 / 24, and a blue full-face helmet.
+    The wordmarks ride elliptical arcs so the type follows the rim the way it
+    does on a club crest, and the band and its pinstripes are clipped to the
+    outer rim so they run edge to edge.
+
+    Two deliberate constraints, both about the artwork being rasterized:
+
+    1. The whole crest lives in one group, id "crest", last in the file.
+       scripts/generate-app-icons.mjs lifts that group to build every launcher
+       icon and splash, so anything outside it does not reach the icons. (This
+       note deliberately does not spell the tag out: the generator looks for
+       that opening tag, and a literal copy of it inside this comment would
+       match first and hand back the whole file.)
+    2. The year is drawn as paths, not type. librsvg in the build container has
+       no fonts at all — fontconfig cannot load a config — so text renders as
+       nothing. "20 / 24" is the one piece of type small enough to survive
+       being pathed, and at 48px it is the only part of the crest that still
+       reads anyway. The two rim wordmarks stay real text: browsers have the
+       fonts, and the generator strips them for the icons.
+  -->
+  <defs>
+    <path id="crestTop" d="M112 186 A200 84 0 0 1 400 186" fill="none" />
+    <path id="crestBottom" d="M120 350 A200 76 0 0 0 392 350" fill="none" />
+  </defs>
+
+  <g id="crest">
+    <!-- Inside the crest, not up in <defs>, so the icon generator carries the
+         clip along with the artwork it lifts. -->
+    <clipPath id="rimClip">
+      <polygon points="256,20 460.4,138 460.4,374 256,492 51.6,374 51.6,138" />
+    </clipPath>
+
+    <!-- Rim: four concentric hexagons. The strokes are the corner rounding —
+         a plain polygon corner is too sharp for a crest. -->
+    <polygon points="256,20 460.4,138 460.4,374 256,492 51.6,374 51.6,138" fill="#0b0b0f" stroke="#0b0b0f" stroke-width="18" stroke-linejoin="round" />
+    <polygon points="256,52 432.7,154 432.7,358 256,460 79.3,358 79.3,154" fill="#ffffff" stroke="#ffffff" stroke-width="14" stroke-linejoin="round" />
+    <polygon points="256,74 413.6,165 413.6,347 256,438 98.4,347 98.4,165" fill="#ffc72c" stroke="#ffc72c" stroke-width="14" stroke-linejoin="round" />
+    <polygon points="256,96 394.6,176 394.6,336 256,416 117.4,336 117.4,176" fill="#e1251b" stroke="#e1251b" stroke-width="12" stroke-linejoin="round" />
+
+    <!-- Year band, edge to edge across the rim. -->
+    <g clip-path="url(#rimClip)">
+      <rect x="0" y="232" width="512" height="58" fill="#0b0b0f" />
+      <rect x="0" y="228" width="512" height="8" fill="#ffc72c" />
+      <rect x="0" y="286" width="512" height="8" fill="#ffc72c" />
+    </g>
+
+    <!-- Year. Drawn as strokes rather than set in a font, so it survives
+         rasterization on a machine with no fonts installed. -->
+    <g fill="none" stroke="#e1251b" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2 11 Q2 2 14 2 Q26 2 26 11 Q26 19 15 25 L2 36 L27 36" transform="translate(104 244)" />
+      <rect x="0" y="0" width="28" height="38" rx="14" transform="translate(135 244)" />
+      <path d="M2 11 Q2 2 14 2 Q26 2 26 11 Q26 19 15 25 L2 36 L27 36" transform="translate(345 244)" />
+      <path d="M20 36 L20 2 L2 25 L28 25" transform="translate(377 244)" />
+    </g>
+
+    <!-- Rim wordmarks. Stripped from the rasterized icons; see the note above. -->
+    <g font-family="'Arial Black', 'Helvetica Neue', Arial, sans-serif" font-weight="900" fill="#0b0b0f" text-anchor="middle">
+      <text font-size="52" letter-spacing="3">
+        <textPath href="#crestTop" startOffset="50%">FETCH</textPath>
+      </text>
+      <text font-size="30" letter-spacing="1.5">
+        <textPath href="#crestBottom" startOffset="50%">BUKIDNON</textPath>
+      </text>
+    </g>
+
+    <!-- Helmet: blue shell, gold brow line, black visor with two glints, and a
+         chin bar. Drawn last so it sits over the band, as on the crest. -->
+    <circle cx="256" cy="256" r="84" fill="#1626c8" stroke="#0b0b0f" stroke-width="9" />
+    <path d="M198 216 A62 62 0 0 1 238 176" fill="none" stroke="#ffffff" stroke-width="19" stroke-linecap="round" />
+    <path d="M214 250 A34 34 0 0 1 234 214" fill="none" stroke="#ffffff" stroke-width="8" stroke-linecap="round" opacity="0.9" />
+    <path d="M188 238 A76 56 0 0 0 324 238" fill="none" stroke="#f5d76e" stroke-width="11" stroke-linecap="round" />
+    <path d="M174 240 L338 240 L332 288 Q256 302 180 288 Z" fill="#0b0b0f" />
+    <path d="M192 254 L238 247 L234 270 L197 276 Z" fill="#ffffff" opacity="0.95" />
+    <path d="M264 252 L308 252 L304 266 L266 264 Z" fill="#ffffff" opacity="0.8" />
+    <path d="M192 300 Q256 322 320 300 L314 326 Q256 346 198 326 Z" fill="#1626c8" stroke="#0b0b0f" stroke-width="7" stroke-linejoin="round" />
+    <path d="M216 310 L246 316 L240 334 L212 326 Z" fill="#ffffff" opacity="0.85" />
+  </g>
+</svg>
