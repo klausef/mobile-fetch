@@ -98,3 +98,41 @@ describe("the rider is told, because silence reads as broken", () => {
     expect(view).not.toContain("if (degraded) return null");
   });
 });
+
+/**
+ * The worker, not the style, is what fetches tiles.
+ *
+ * A worker that cannot load leaves the map looking half-alive: the style
+ * builds, the controls draw, the canvas stays empty — and the console says only
+ * "Worker failed to load. Check that the worker URL is correct." MapLibre finds
+ * its worker relative to its own module (`new URL("./maplibre-gl-worker.mjs",
+ * import.meta.url)`), which a bundler can silently invalidate: Vite's dev
+ * pre-bundler rewrites the library into `node_modules/.vite/deps/` without
+ * copying the worker beside it, so the derived URL 404s and the booking and
+ * pin-dropping maps render as an empty rectangle. These contracts pin the
+ * override that keeps the worker addressable.
+ */
+describe("the tile worker is pointed at a real URL", () => {
+  test("the worker URL is handed to MapLibre explicitly", () => {
+    expect(view).toContain("setWorkerUrl(maplibreWorkerUrl)");
+  });
+
+  test("it is a bundler-owned worker URL, not a hand-built path", () => {
+    // `?worker&url` has the bundler emit the worker and return its URL, so the
+    // address is right in dev and in a build alike; a hand-written path would
+    // rot the moment node_modules moved.
+    expect(view).toContain(
+      'from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url"',
+    );
+  });
+
+  test("the override is registered before any map is built", () => {
+    // MapLibre reads `WORKER_URL` when it spawns its worker pool, so a call
+    // made after the first `new MapLibreMap(...)` would already be too late
+    // for that map — and the first map is the one the commuter sees.
+    expect(view.indexOf("setWorkerUrl(maplibreWorkerUrl)")).toBeGreaterThan(-1);
+    expect(view.indexOf("setWorkerUrl(maplibreWorkerUrl)")).toBeLessThan(
+      view.indexOf("new MapLibreMap("),
+    );
+  });
+});

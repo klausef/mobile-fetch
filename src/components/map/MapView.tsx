@@ -38,9 +38,11 @@
 import {
   Map as MapLibreMap,
   Marker,
+  setWorkerUrl,
   type EaseToOptions,
   type GeoJSONSource,
 } from "maplibre-gl";
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Crosshair, Minus, Plus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -55,6 +57,29 @@ import {
 } from "@/lib/map-service";
 import { fetchRoute, straightGeometry } from "@/lib/routing-service";
 import { cn } from "@/lib/utils";
+
+/**
+ * Point MapLibre at its worker explicitly, or the map draws nothing but chrome.
+ *
+ * maplibre-gl finds its worker relative to its own module — effectively
+ * `new URL("./maplibre-gl-worker.mjs", import.meta.url)` — which is right when
+ * the library is served as authored and wrong the moment a bundler moves it.
+ * Vite's dev dependency pre-bundler rewrites the library into
+ * `node_modules/.vite/deps/maplibre-gl.js` without copying the worker beside
+ * it, so that URL becomes `/.vite/deps/maplibre-gl-worker.mjs`: a 404. The map
+ * still builds a style and still draws its controls, over an empty canvas —
+ * the worker is what fetches and unpacks tiles — and the only clue is
+ * "Worker failed to load. Check that the worker URL is correct." in the
+ * console.
+ *
+ * `?worker&url` has Vite bundle the worker itself and hand back a real URL, so
+ * this holds in dev and in a build. `setWorkerUrl` is MapLibre's own override:
+ * its `WORKER_URL` wins over the derived default (`getWorkerUrl()`), which
+ * keeps the correction here rather than in `vite.config.ts` — where the
+ * pre-bundling that causes this is configured, and which this app otherwise
+ * does not touch.
+ */
+setWorkerUrl(maplibreWorkerUrl);
 
 export type MapMarkerKind =
   | "pickup"
