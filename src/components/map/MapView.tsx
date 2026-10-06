@@ -152,6 +152,20 @@ interface MapViewProps {
   onDragPointChange?: (point: LatLng) => void;
   /** Fired once when the drag is released, for snapping to a real address. */
   onDragPointEnd?: (point: LatLng) => void;
+  /**
+   * A pin held in the *middle of the view* instead of at a coordinate.
+   *
+   * The Gojek pattern, and the opposite of `dragPoint`: here the marker is
+   * bolted to the screen and the map is what moves under it, so "where the pin
+   * is" and "where the camera is pointing" are the same fact rather than two
+   * that can drift apart.
+   *
+   * Deliberately an overlay and not a maplibre marker — a marker is anchored to
+   * a lng/lat and would travel with the camera, which is exactly the behaviour
+   * being replaced. The caller reads the chosen position back through
+   * `onViewChange` and commits it on `moveend`.
+   */
+  centerPin?: MapMarker | null;
   /** When set, the map keeps this point centered until the user pans away. */
   followTarget?: LatLng | null;
   /**
@@ -167,7 +181,21 @@ interface MapViewProps {
   recenterTarget?: LatLng | null;
   interactive?: boolean;
   className?: string;
-  onViewChange?: (center: LatLng, zoom: number) => void;
+  /**
+   * The camera's centre, said twice with two different meanings.
+   *
+   * `move` fires on every frame of a pan or an eased glide; `moveend` fires
+   * once, when the view has settled. That distinction is the whole reason this
+   * is not one callback: a screen that geocodes on `move` fires a request per
+   * frame — MapTiler would rate-limit it and the sheet would flicker — while a
+   * screen that only ever heard `moveend` has nothing to show *during* the
+   * gesture. So: live readout on `move`, commit on `moveend`.
+   */
+  onViewChange?: (
+    center: LatLng,
+    zoom: number,
+    phase: "move" | "moveend",
+  ) => void;
   /**
    * Demand points drawn as a density heatmap beneath the route.
    *
@@ -440,6 +468,7 @@ export function MapView({
   dragPoint = null,
   onDragPointChange,
   onDragPointEnd,
+  centerPin = null,
   followTarget = null,
   recenterTarget = null,
   interactive = true,
@@ -708,16 +737,19 @@ export function MapView({
       latest.current.onViewChange?.(
         { lat: next.lat, lng: next.lng },
         map.getZoom(),
+        "move",
       );
     });
     // Also report the settled view. An eased move fires `move` on every frame,
     // so a caller that mirrors the map into state would otherwise be left
-    // holding a mid-animation centre once the glide finished.
+    // holding a mid-animation centre once the glide finished — and a caller
+    // that geocodes needs to know *when* the answer stopped changing.
     map.on("moveend", () => {
       const next = map.getCenter();
       latest.current.onViewChange?.(
         { lat: next.lat, lng: next.lng },
         map.getZoom(),
+        "moveend",
       );
     });
     // Any deliberate pan means the commuter is looking somewhere else; stop
@@ -1075,11 +1107,73 @@ export function MapView({
     glide({ center: [target.lng, target.lat], duration: EASE_CENTER_MS });
   };
 
+  /*
+   * How the centre pin is painted, decided by which end is being chosen.
+   *
+   * Filled teardrop for the pickup — the place the rider comes *to* — and an
+   * outlined one for the destination, which is the same filled/hollow rule the
+   * dot pins follow. Keeping the two vocabularies identical means a commuter
+   * who has used one screen can read the other without being told.
+   */
+  const pinFilled = (centerPin?.kind ?? "destination") === "pickup";
+  const pinFill = pinFilled ? ROUTE_COLOR : "#ffffff";
+  const pinStroke = pinFilled ? "none" : ROUTE_COLOR;
+  const pinStrokeWidth = pinFilled ? 0 : 2;
+  const pinDot = pinFilled ? "#ffffff" : ROUTE_COLOR;
+
   return (
     <div
       ref={containerRef}
       className={cn("relative overflow-hidden bg-secondary/60", className)}
     >
+      {/*
+          The centre pin: furniture on the screen, not a thing on the map.
+
+          `pointer-events-none` is load-bearing rather than tidy — the pin sits
+          over the exact spot the user is about to drag, so swallowing the
+          pointer there would make the gesture this exists for impossible. The
+          tip of the teardrop is the point: the graphic is translated up by its
+          own height, so what lands on the container's centre is the sharp end
+          rather than the middle of the SVG.
+
+          Below the controls (z-10) so zoom and recentre stay tappable, and
+          above the canvas so the pin is never lost against the tiles.
+      */}
+      {centerPin ? (
+        <div
+          className="pointer-events-none absolute inset-0 z-[5]"
+          data-testid="center-pin"
+        >
+          {/*
+              `left-1/2 top-1/2` puts the *top-left corner* of the graphic on
+              the centre, so both axes have to be translated back: the full
+              height to drop the tip onto the centre, half the width to keep it
+              horizontally true. `block` on the svg matters too — as an inline
+              box it would sit on a baseline and gain a few pixels of descender
+              space below the tip, which would quietly put the pin off the spot
+              it is claiming to mark.
+          */}
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-full">
+            <svg
+              viewBox="0 0 24 36"
+              width="32"
+              height="48"
+              aria-hidden="true"
+              className="block"
+              style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.3))" }}
+            >
+              <path
+                d="M12 0C5.4 0 0 5.2 0 11.6 0 20.4 12 36 12 36s12-15.6 12-24.4C24 5.2 18.6 0 12 0z"
+                fill={pinFill}
+                stroke={pinStroke}
+                strokeWidth={pinStrokeWidth}
+              />
+              <circle cx="12" cy="11.6" r="4.2" fill={pinDot} />
+            </svg>
+          </div>
+        </div>
+      ) : null}
+
       {/* Controls. 44px on a phone, where these get pressed with a thumb on a
           moving bus; they shrink back on pointer devices. */}
       {interactive ? (

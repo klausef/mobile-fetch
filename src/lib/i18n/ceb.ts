@@ -274,7 +274,7 @@ export const ceb: Dictionary = {
     recentHereTitle: "Bag-o lang diri nga cellphone",
     clearRecents: "Clear",
     recentTitle: "Bag-o lang",
-    dragHint: "I-drag ang pin, o tap sa mapa",
+    dragHint: "I-drag ang mapa, o i-tap, aron ibalhin ang pin",
     draggingAddress: "Gipangita ang address…",
     etaLabel: "ETA",
     nearbyResults: "Tap ang pin nga may numero aron pilion",

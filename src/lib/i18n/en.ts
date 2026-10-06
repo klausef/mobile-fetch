@@ -271,7 +271,7 @@ export const en = {
     recentHereTitle: "Recent on this phone",
     clearRecents: "Clear",
     recentTitle: "Recent",
-    dragHint: "Drag the pin, or tap the map",
+    dragHint: "Drag the map, or tap it, to move the pin",
     draggingAddress: "Looking for the address…",
     etaLabel: "ETA",
     nearbyResults: "Tap a numbered pin to pick it",

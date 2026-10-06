@@ -116,6 +116,58 @@ test("a bearing of \"unknown\" is normalised to no bearing", () => {
   expect(normalizeHeading(90)).toBe(90);
   // Out-of-range readings wrap rather than rotating by 400 degrees.
   expect(normalizeHeading(360)).toBe(0);
-  expect(normalizeHeading(450)).toBe(90);
-  expect(normalizeHeading(-90)).toBe(270);
+  expect(normalizeHeading(450)).toBe(90);  expect(normalizeHeading(-90)).toBe(270);
+});
+
+/* ── The centre pin: the map moves, the pin does not ───────────────────── */
+
+const setLocation = readFileSync("src/pages/SetLocation.tsx", "utf8");
+
+/** The camera reporting block, from `move` up to the handler that follows. */
+function viewReporting(): string {
+  const start = mapView.indexOf('map.on("move"');
+  const end = mapView.indexOf('map.on("dragstart"');
+  expect(start).toBeGreaterThan(-1);
+  return mapView.slice(start, end);
+}
+
+test("the centre pin is furniture on the screen, not a pin on the map", () => {
+  // The Gojek model: the marker stays put and the map is dragged underneath
+  // it. A maplibre marker is anchored to a lng/lat, so it would travel with
+  // the camera and quietly become the draggable-pin model again.
+  expect(mapView).toContain("centerPin?: MapMarker | null;");
+  expect(mapView).toContain(
+    'className="pointer-events-none absolute inset-0 z-[5]"',
+  );
+  // `pointer-events-none` is what keeps a tap on the pin a tap on the map —
+  // the pin sits over the exact spot the gesture has to start from.
+  expect(mapView).toContain("pointer-events-none");
+  // The tip, not the middle of the graphic, is what lands on the centre: both
+  // axes are translated back from the top-left corner the offsets set.
+  expect(mapView).toContain(
+    'className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-full"',
+  );
+  // An inline svg sits on a baseline and grows descender space below the tip,
+  // which would put the pin off the very spot it marks.
+  expect(mapView).toContain('className="block"');
+});
+
+test("the address screen edits with a fixed centre pin, not a draggable one", () => {
+  expect(setLocation).toContain("centerPin={");
+  // The model this replaces: a pin dragged around a map that stood still.
+  // Two at once would fight — one follows the finger, the other the camera.
+  expect(setLocation).not.toContain("dragPoint=");
+  expect(setLocation).not.toContain("onDragPointEnd=");
+});
+
+test("the centre is reported while it moves and once it settles", () => {
+  // Both phases, or the screen is forced to choose between a geocode per
+  // frame and nothing to show while the finger is down.
+  const reporting = viewReporting();
+  expect(reporting).toContain('"move",');
+  expect(reporting).toContain('"moveend",');
+  // The screen reads `move` for the live readout and commits — once, and only
+  // for a real move — on `moveend`.
+  expect(setLocation).toContain('if (phase === "move")');
+  expect(setLocation).toContain("SETTLE_MIN_METERS");
 });

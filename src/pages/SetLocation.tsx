@@ -56,6 +56,19 @@ const CHOOSING_ZOOM = 15;
 const CITY_ZOOM = 13;
 
 /**
+ * How far the centre has to travel before a settle counts as a new pin.
+ *
+ * The centre pin only reports a position once the map has stopped moving, and
+ * stopping happens after every gesture — including the glide that puts the pin
+ * where it already was when Edit was pressed. Without a floor, that glide
+ * alone would commit a fresh point and cost a geocode for an address the sheet
+ * is already showing. Twelve metres is past a jittery settle but well inside
+ * the distance a deliberate drag covers, so an intentional move is never
+ * swallowed.
+ */
+const SETTLE_MIN_METERS = 12;
+
+/**
  * A point as a key, at the precision the UI can actually show.
  *
  * About a metre, which is finer than a GPS fix or a fingertip is honest about.
@@ -358,15 +371,6 @@ export default function SetLocation({ step }: { step: LocationStep }) {
 
   const savePlace = useMutation(api.savedPlaces.savePlace);
 
-  /** The pin under the finger, reported every frame; see the `drag` state note. */
-  const handleDragChange = (next: LatLng) => setDrag(next);
-
-  /** The drag is over: commit the point, so the address lookup runs exactly once. */
-  const handleDragEnd = (next: LatLng) => {
-    setDrag(null);
-    choose(next);
-  };
-
   /** The point the sheet is describing: the live drag while one is happening. */
   const shownPoint = drag ?? point;
   const dragging = drag !== null;
@@ -446,7 +450,7 @@ export default function SetLocation({ step }: { step: LocationStep }) {
         kind: "pickup",
       });
     }
-    if (point) {
+    if (point && !editing) {
       markers.push({ id: "to", lat: point.lat, lng: point.lng, kind: "destination" });
     }
     // The pin a long press dropped, drawn but not yet committed. Labelled so it
@@ -526,9 +530,36 @@ export default function SetLocation({ step }: { step: LocationStep }) {
           center={center}
           zoom={zoom}
           markers={markers}
-          onViewChange={(next, nextZoom) => {
+          onViewChange={(next, nextZoom, phase) => {
             setCenter(next);
             setZoom(nextZoom);
+            //
+            // Settled means the drag is over, whatever mode we happen to be
+            // in by then: pressing Done in the middle of a glide would
+            // otherwise leave the sheet describing a drag that has already
+            // ended — live coordinates in the headline and Next disabled for
+            // good, with no gesture left to clear it.
+            if (phase === "moveend") setDrag(null);
+            if (!editing) return;
+            //
+            // While editing, the pin is bolted to the middle of the screen and
+            // the map is the thing that moves — the Gojek way round. `move`
+            // gives the sheet something to say while the finger is still down
+            // (the live city, or the coordinates when the middle of nowhere is
+            // the answer); `moveend` is the answer itself: one commit, and so
+            // one address lookup, however many frames the gesture took.
+            if (phase === "move") {
+              setDrag(next);
+              return;
+            }
+            // A glide we started ourselves — entering Edit, or a tap that put
+            // the pin somewhere — settles exactly where `point` already is.
+            // Committing that would be a new object for the same place and a
+            // second lookup for an address we already hold, so only a move
+            // bigger than the pin's own precision commits.
+            if (!point || haversineKm(point, next) * 1000 > SETTLE_MIN_METERS) {
+              choose(next);
+            }
           }}
           onPick={editing ? choose : undefined}
           onLongPress={step === "destination" && !editing ? dropHeldPin : undefined}
@@ -540,9 +571,16 @@ export default function SetLocation({ step }: { step: LocationStep }) {
               ? [[prefill.pickup, point]]
               : null
           }
-          dragPoint={editing ? shownPoint : null}
-          onDragPointChange={editing ? handleDragChange : undefined}
-          onDragPointEnd={editing ? handleDragEnd : undefined}
+          // The pin does not move while editing; the map does. See `centerPin`.
+          centerPin={
+            editing
+              ? {
+                  id: "center-pin",
+                  ...center,
+                  kind: step === "pickup" ? "pickup" : "destination",
+                }
+              : null
+          }
           onMarkerClick={
             step === "destination" && !editing && results.length > 0
               ? (marker) => {
@@ -634,7 +672,14 @@ export default function SetLocation({ step }: { step: LocationStep }) {
             <Button
               type="button"
               variant="outline"
-              onClick={() => setEditing((prev) => !prev)}
+              onClick={() => {
+                // Leaving Edit by hand also ends the readout: a settle can
+                // only clear the drag if a settle is still to come, and a
+                // headline stuck on coordinates would leave Next disabled with
+                // nothing left to press.
+                setDrag(null);
+                setEditing((prev) => !prev);
+              }}
               className="shrink-0 rounded-full"
             >
               {editing ? (
