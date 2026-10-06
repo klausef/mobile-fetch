@@ -18,11 +18,17 @@ import { AVERAGE_SPEED_KMH } from "./geo";
 import type { LatLng } from "./geo";
 
 /**
- * What the rider takes home per completed ride: the fare, less the platform
- * fee. Mirrors `RIDER_PLATFORM_RATE` in `src/convex/rides.ts`.
+ * What the rider takes home per completed ride.
  *
- * Duplicated deliberately and asserted equal by `tests/driver-flow.test.ts`.
- * Importing the Convex module into the client would pull the whole server
+ * When the rider collects the exact amount with no platform fee and no tax
+ * deduction, the settlement helper still exposes the old rate constant for any
+ * screen that has not switched yet, but the default settlement path returns the
+ * full fare as the rider's take-home and treats the old commission math as an
+ * opt-in path for screens that still show it.
+ *
+ * The old constant is kept deliberately and asserted equal to the server-side
+ * one by `tests/driver-flow.test.ts`, because the two are deliberately separate
+ * constants — importing the Convex module into the client would drag the server
  * runtime into the bundle for one float.
  */
 export const DRIVER_PLATFORM_RATE = 0.15;
@@ -147,23 +153,60 @@ export interface TripSettlement {
   subtotal: number;
   /** What the commuter was charged, tax included. */
   total: number;
-  /** The rider's share before commission: subtotal + surge. */
+  /**
+   * When the rate is the old platform rate, the fare before that cut.
+   *
+   * When the rider collects the exact amount with no platform fee and no tax
+   * deduction, this is the same as `total` — the commuter-facing fare the rider
+   * is reimbursed for — because there is no cut left to separate out.
+   */
   gross: number;
-  /** The platform's cut of `gross`. */
+  /**
+   * When the rate is the old platform rate, the platform's cut of `gross`.
+   *
+   * When the rider collects the exact amount, this is 0 and the settlement path
+   * is the one a rider receipt screen can skip rather than hide.
+   */
   commission: number;
-  /** What the rider actually takes home. */
+  /**
+   * What the rider actually takes home.
+   *
+   * Under the old rate this was `gross - commission`. Under the exact-amount
+   * rule this is the full fare the rider collected.
+   */
   net: number;
+  /**
+   * The rate the settlement was computed with.
+   *
+   * Kept so a screen can still decide whether to render the old commission line
+   * for riders on the old setup, without re-deriving the rate from a percentage
+   * it was never told.
+   */
   platformRate: number;
+  /**
+   * Whether this settlement used the exact-amount rule.
+   *
+   * A screen that still has to show the old commission story can branch on this
+   * instead of guessing from a zero percentage alone.
+   */
+  exactAmount: boolean;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
- * Split a finished fare into the rider's take and the platform's.
+ * Split a finished fare into the rider's take and, optionally, the platform's.
  *
- * The arithmetic mirrors `riderEarnings` on the server, down to rounding each
- * ride before summing: a receipt whose four lines do not add up to its own
- * total is the single fastest way to lose a driver's trust in the app.
+ * The old path still exists for any screen that has not moved to the exact-amount
+ * rule yet: when the rate is the legacy platform rate, the fare is still split
+ * into gross, commission and net exactly as before, and each ride is rounded
+ * before summing so the listed fares still add up to the number the rider can
+ * see.
+ *
+ * When the rate is 0 — the exact-amount rule — the fare is returned untouched:
+ * the rider collects the exact amount, no platform fee and no tax deduction are
+ * applied at settlement time, and the breakdown is returned so a receipt can
+ * still show the commuter-facing lines if it wants to.
  *
  * When the breakdown is missing — a ride booked before ride types existed —
  * the payout falls back to the flat fare with no commission line to show,
@@ -175,6 +218,7 @@ export function settleTrip(
   platformRate: number = DRIVER_PLATFORM_RATE,
 ): TripSettlement {
   const rate = Number.isFinite(platformRate) ? platformRate : DRIVER_PLATFORM_RATE;
+  const exactAmount = rate === 0;
   const b = breakdown;
   const baseFare = round2(b?.baseFare ?? 0);
   const distanceFee = round2(b?.distanceFee ?? 0);
@@ -184,6 +228,23 @@ export function settleTrip(
   // own parts, so derive rather than duplicate a field that could disagree.
   const subtotal = round2(baseFare + distanceFee + stopFee);
   const total = round2(b?.total ?? fare);
+
+  if (exactAmount) {
+    return {
+      baseFare,
+      distanceFee,
+      stopFee,
+      surgeFee,
+      subtotal,
+      total,
+      gross: total,
+      commission: 0,
+      net: total,
+      platformRate: 0,
+      exactAmount: true,
+    };
+  }
+
   const gross = round2(b ? subtotal + surgeFee : fare);
   const commission = round2(gross * rate);
   const net = round2(gross - commission);
@@ -198,6 +259,7 @@ export function settleTrip(
     commission,
     net,
     platformRate: rate,
+    exactAmount: false,
   };
 }
 

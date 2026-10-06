@@ -831,9 +831,13 @@ export default function RiderRide() {
  * The receipt a rider is left looking at when a trip ends.
  *
  * Reads the stored breakdown line by line rather than recomputing it, so the
- * four numbers on screen are the ones the commuter was charged. The platform's
- * cut is stated plainly — a rider who is told a percentage at signup and never
- * shown the arithmetic is a rider who assumes the worst.
+ * numbers on screen are the ones the commuter was charged. When the rider
+ * collects the exact amount, the receipt shows the full fare as the rider's
+ * take-home and the platform-fee line is omitted.
+ *
+ * When the rider is still on the legacy setup, the same panel still shows the
+ * commission line from the settlement helper and still uses the stored
+ * breakdown for the commuter-facing lines.
  */
 function CompletedPanel({
   receipt,
@@ -883,6 +887,7 @@ function CompletedPanel({
   const durationMs = tripDurationMs(ride.startedAt, ride.completedAt);
   const isCash = (ride.paymentMethod ?? "cash") === "cash";
   const hasBreakdown = ride.fareBreakdown != null;
+  const collectAmount = settlement.net;
 
   return (
     <section className="overflow-hidden rounded-3xl border border-border/70 bg-card">
@@ -951,14 +956,16 @@ function CompletedPanel({
                 </dd>
               </div>
             ) : null}
-            <div className="flex items-baseline justify-between gap-3 border-t border-border pt-1.5">
-              <dt className="text-muted-foreground">
-                Platform fee ({Math.round(platformRate * 100)}%)
-              </dt>
-              <dd className="tracking-tight text-muted-foreground">
-                −{formatPeso(settlement.commission)}
-              </dd>
-            </div>
+            {settlement.exactAmount ? null : (
+              <div className="flex items-baseline justify-between gap-3 border-t border-border pt-1.5">
+                <dt className="text-muted-foreground">
+                  Platform fee ({Math.round(settlement.platformRate * 100)}%)
+                </dt>
+                <dd className="tracking-tight text-muted-foreground">
+                  −{formatPeso(settlement.commission)}
+                </dd>
+              </div>
+            )}
           </dl>
           <div className="mt-3 flex items-baseline justify-between gap-3 border-t border-border pt-3">
             <span className="text-sm font-medium tracking-tight">
@@ -984,7 +991,7 @@ function CompletedPanel({
             <Button className="h-12 w-full" onClick={onCollect}>
               <Wallet className="size-4" />
               {isCash
-                ? `Collect ${formatPeso(settlement.total)} in cash`
+                ? `Collect ${formatPeso(collectAmount)} in cash`
                 : "Confirm payment received"}
             </Button>
             <p className="mt-2 text-center text-xs text-muted-foreground">
