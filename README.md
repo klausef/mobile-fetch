@@ -23,7 +23,17 @@ This project is set up already and running on a cloud environment, as well as a 
 
 ## Environment Variables
 
-The project is set up with project specific CONVEX_DEPLOYMENT and VITE_CONVEX_URL environment variables on the client side.
+The deployment is written into the client: `src/lib/convex.ts` pins
+`https://scrupulous-sheep-213.convex.cloud`, and every build ships that value —
+dev, preview, APK.
+
+`VITE_CONVEX_URL` is still read, but only to warn when it disagrees. Vite gives
+an already-set process environment variable priority over `.env.local`, so
+relying on the variable let a build bind to a different deployment than the
+repository declares — silently, and only in the built bundle. Change the
+deployment in `src/lib/convex.ts`, and move `VITE_CONVEX_URL` and
+`CONVEX_DEPLOYMENT` with it so `convex dev` pushes functions to the same backend
+the client talks to.
 
 The convex server has a separate set of environment variables that are accessible by the convex backend.
 
@@ -339,7 +349,8 @@ When using convex, make sure:
 
 `android/` is the Capacitor shell around the web build. `bun run android:apk`
 assembles a debug APK locally and `.github/workflows/android.yml` does the same on
-CI (it needs the `VITE_CONVEX_URL` repository secret).
+CI (the deployment itself comes from `src/lib/convex.ts`; the workflow's
+`VITE_CONVEX_URL` secret only has to agree with it).
 
 ## Icons and splash
 

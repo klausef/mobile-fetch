@@ -49,7 +49,7 @@ modules read them, through `expo-constants`:
 
 | Key | What it is | Read by |
 | --- | --- | --- |
-| `convexUrl` | The Convex deployment. **Must be the same URL the web app builds with** (`VITE_CONVEX_URL`). | `lib/convex.ts` |
+| `convexUrl` | The Convex deployment. **Must match the web app's pinned deployment** (`src/lib/convex.ts`). | `lib/convex.ts` |
 | `orsKey` | OpenRouteService token for road distance. | `lib/routes.ts` |
 | `mapboxAccessToken` | The **public** `pk.` token the Mapbox map screen renders with. | `lib/mapbox.ts` |
 
@@ -72,8 +72,10 @@ anything the phone needs has to be substituted into the code at build time.
 bundle-time substitution with a different front end:
 
 - Vite inlines `import.meta.env.VITE_*` into the web build. That is why the
-  web app's URL can be read straight out of `dist/assets/index-*.js`, and why it
-  throws on startup when the variable is missing at build time.
+  web app's URL can be read straight out of `dist/assets/index-*.js`. (The web
+  app's Convex URL is the one exception: it is pinned in `src/lib/convex.ts`
+  rather than taken from the environment, so a build cannot be handed a
+  different deployment than the repository declares.)
 - Expo does the same for `EXPO_PUBLIC_*`, or you hand the value to the app
   through `app.json`. This project uses `app.json` because it is checked in, it
   is the file that already defines the app, and `expo-constants` reads it back

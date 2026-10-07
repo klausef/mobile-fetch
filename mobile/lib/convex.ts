@@ -11,7 +11,8 @@ import { ConvexReactClient } from "convex/react";
  * `import.meta.env`, which it inlines into the web bundle the same way. Neither
  * one is secret — both end up as plaintext inside the artifact.
  *
- * The value **must match the web app's `VITE_CONVEX_URL`**. There is one backend:
+ * The value **must match the web app's deployment**, which is pinned in
+ * `src/lib/convex.ts`. There is one backend:
  * a ride booked on the phone is a ride the web dashboard and the Capacitor
  * build can see, and a rider on either platform can accept it. Point this at a
  * different deployment and that stops being true, and the phone quietly fills a
