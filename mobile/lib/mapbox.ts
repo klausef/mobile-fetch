@@ -5,10 +5,11 @@
  * app just renders maps rather than fighting over which token to use or whether
  * `setAccessToken` has been called yet.
  *
- * The token is read from Expo app config (`expo.extra.mapboxAccessToken`) so the
- * repo does not contain the key in source the way a handwritten `.env` import
- * would. For now the app runs with the public token in the visible map only; the
- * matching secret is reserved for server-side geocoding/routing later.
+ * The token is read from Expo app config (`expo.extra.mapboxAccessToken`), which
+ * is a committed file — so treat this value as public. That is fine for what it
+ * is: a `pk.` access token is designed to ship in a client, and it is scoped by
+ * the URL restrictions on the Mapbox account, not by secrecy. A secret `sk.`
+ * token must never be put here; those belong on the server.
  */
 
 import Mapbox from "@rnmapbox/maps";

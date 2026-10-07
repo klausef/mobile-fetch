@@ -1,3 +1,13 @@
-.env.local
+# Dependencies and build output.
 node_modules
 dist
+# `isolate/` is a second, unreferenced copy of the built site (same hashed
+# assets as dist/, nothing imports it). Ignored so a stray copy of the app never
+# gets committed.
+isolate
+
+# Secrets. `.env.example` stays tracked on purpose — it is the template that
+# documents which variables exist, and it holds no values.
+.env
+.env.keys
+.env*.local

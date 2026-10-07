@@ -19,7 +19,7 @@ What the phone *does* own:
 
 | File | Why it cannot be shared |
 | --- | --- |
-| `lib/convex.ts` | The URL ships in `app.json` instead of `VITE_*`. |
+| `lib/convex.ts` | A native bundle reads app config, not `import.meta.env`. |
 | `lib/auth-storage.ts` | Tokens live in SecureStore; the browser uses `localStorage`. |
 | `lib/format.ts` | Hermes ships a partial `Intl`, so money and dates are hand-rolled. |
 | `lib/location.ts` | `expo-location` rather than `navigator.geolocation`. |
@@ -44,19 +44,45 @@ render. Use `bun run android` — a development build — or the APK flow below.
 
 ## Configuration
 
-`app.json` → `expo.extra` carries the keys the app needs at build time:
+`app.json` → `expo.extra` carries the values the app needs at build time. Three
+modules read them, through `expo-constants`:
 
-| Key | What it is |
-| --- | --- |
-| `convexUrl` | The Convex deployment. The same one the web app uses. |
-| `mapTilerKey` | Address search and reverse geocoding. |
-| `orsKey` | OpenRouteService token for road distance. |
-| `mapboxAccessToken` | The **public** `pk.` token the Mapbox map screen renders with. |
+| Key | What it is | Read by |
+| --- | --- | --- |
+| `convexUrl` | The Convex deployment. **Must be the same URL the web app builds with** (`VITE_CONVEX_URL`). | `lib/convex.ts` |
+| `orsKey` | OpenRouteService token for road distance. | `lib/routes.ts` |
+| `mapboxAccessToken` | The **public** `pk.` token the Mapbox map screen renders with. | `lib/mapbox.ts` |
 
 `orsKey` is empty by default. Without it the app prices trips on the
 straight-line distance, which the server also accepts — the quote stays honest,
 it is just a little lower than the browser's road-based one. Paste the same
 token the web build uses as `VITE_ORS_KEY`.
+
+There is no `mapTilerKey` here on purpose. The phone draws no MapLibre canvas,
+so it has no tiles to fetch, and `lib/places.ts` resolves addresses through
+placeholders rather than MapTiler. A key in this table is a value shipped to
+every install; there is no reason to ship one nothing reads.
+
+### Why the keys are in `app.json` and not a `.env` file
+
+Because a native app has no environment to read at runtime. The JS bundle is
+compiled once and installed on a device that has never seen your shell, so
+anything the phone needs has to be substituted into the code at build time.
+`.env` files are not a different, more private channel — they are the same
+bundle-time substitution with a different front end:
+
+- Vite inlines `import.meta.env.VITE_*` into the web build. That is why the
+  web app's URL can be read straight out of `dist/assets/index-*.js`, and why it
+  throws on startup when the variable is missing at build time.
+- Expo does the same for `EXPO_PUBLIC_*`, or you hand the value to the app
+  through `app.json`. This project uses `app.json` because it is checked in, it
+  is the file that already defines the app, and `expo-constants` reads it back
+  without any loader or extra config.
+- A root `.env` would not reach the phone anyway. The Expo CLI loads env files
+  from its own project root (`mobile/`), not the repository root.
+
+So treat every value in the table above as public. The Mapbox `pk.` token is
+designed to ship in a client; a secret `sk.` token must never be added here.
 
 ## Building an APK
 
@@ -139,6 +165,7 @@ secret in the build tree.
 ## Not here yet
 
 - A map canvas on the booking screen. The picker is search-first plus "use my
-  location"; the phone does not draw MapLibre tiles.
+  location"; the phone does not draw MapLibre tiles. (This is also why no
+  MapTiler key is configured — see **Configuration**.)
 - The admin console. It stays on the web dashboard.
 - Push notifications; the app reads the in-app notification list only.
