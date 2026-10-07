@@ -641,8 +641,21 @@ export function MapView({
         ],
       });
     } catch (error) {
-      setUnavailable(true);
-      setUnavailableReason(webglReason(error));
+      /*
+       * Deferred, not set on the spot.
+       *
+       * A state update called synchronously in an effect body cascades a render
+       * — react-hooks/set-state-in-effect, which is what the lint run says
+       * about the direct version of these two lines — and the map is not going
+       * to appear in this pass either way. A microtask is the rule's own advice
+       * ("calling setState in a callback") and still lands before the browser
+       * paints, so the rider never sees the empty frame it would have
+       * explained.
+       */
+      queueMicrotask(() => {
+        setUnavailable(true);
+        setUnavailableReason(webglReason(error));
+      });
       console.error("[fetch] the map could not start", error);
       return;
     }

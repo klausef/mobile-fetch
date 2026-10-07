@@ -159,9 +159,11 @@ describe("a map that cannot start says so", () => {
     // Everything after the constructor — the handlers, the watchdog, the
     // style — needs a map that exists. A catch that carried on would turn one
     // clear failure into a cascade of null dereferences.
+    // Bounded by the line that needs a real map, so this cannot pass on a
+    // `return` that belongs to some later handler.
     const at = view.indexOf("} catch (error) {");
     expect(at).toBeGreaterThan(-1);
-    const caught = view.slice(at, at + 300);
+    const caught = view.slice(at, view.indexOf("mapRef.current = map;", at));
     expect(caught).toContain("setUnavailable(true)");
     expect(caught).toContain("return;");
   });
