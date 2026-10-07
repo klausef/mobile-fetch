@@ -136,3 +136,54 @@ describe("the tile worker is pointed at a real URL", () => {
     );
   });
 });
+
+/**
+ * The third way the map can go missing, and the one that used to be silent.
+ *
+ * The style fallback and the degraded notice both assume a map exists to
+ * complain about. maplibre-gl v6 needs a WebGL2 context and throws from its
+ * constructor when the browser will not hand one over — hardware acceleration
+ * switched off, a driver on the blocklist, a virtual machine or a remote
+ * renderer with no GPU. That throw lands inside a `useEffect`, so nothing
+ * catches it, nothing renders, and the rider is left with the pin and the zoom
+ * buttons over an empty rectangle: indistinguishable from a broken app. These
+ * contracts keep the guard, and the words, in place.
+ */
+describe("a map that cannot start says so", () => {
+  test("the constructor is the guarded thing", () => {
+    expect(view).toContain("let map: MapLibreMap;");
+    expect(view).toMatch(/try \{\s*map = new MapLibreMap\(\{/);
+  });
+
+  test("the failure is caught, and takes no further map with it", () => {
+    // Everything after the constructor — the handlers, the watchdog, the
+    // style — needs a map that exists. A catch that carried on would turn one
+    // clear failure into a cascade of null dereferences.
+    const at = view.indexOf("} catch (error) {");
+    expect(at).toBeGreaterThan(-1);
+    const caught = view.slice(at, at + 300);
+    expect(caught).toContain("setUnavailable(true)");
+    expect(caught).toContain("return;");
+  });
+
+  test("the rider is told what it needs, in words", () => {
+    expect(view).toContain("This browser will not start the map.");
+    expect(view).toContain("The map needs WebGL2");
+  });
+
+  test("the browser's own reason is carried through when it gave one", () => {
+    // "Hardware acceleration is off" and "the GPU process would not boot" are
+    // different problems with different fixes, and the browser already said
+    // which one it was — maplibre hands the status message on to us.
+    expect(view).toContain("setUnavailableReason(webglReason(error))");
+    expect(view).toContain("function webglReason(error: unknown): string | null");
+    expect(view).toContain("statusMessage");
+  });
+
+  test("controls that would do nothing are not drawn", () => {
+    // Zoom and recentre are real DOM and stay mounted over a canvas that never
+    // existed; leaving them up is the app pretending to work.
+    expect(view).toContain("{interactive && !unavailable ? (");
+    expect(view).toContain("const [unavailable, setUnavailable] = useState(false);");
+  });
+});

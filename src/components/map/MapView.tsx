@@ -81,6 +81,19 @@ import { cn } from "@/lib/utils";
  */
 setWorkerUrl(maplibreWorkerUrl);
 
+/**
+ * The browser's own reason for refusing a WebGL2 context, when it gave one.
+ *
+ * maplibre throws a `GPUInitializationError` carrying the `statusMessage` the
+ * browser put on its `webglcontextcreationerror` event. The field is optional
+ * and browser-specific, so it is read off `unknown` rather than assumed: a
+ * wrong guess here would print `undefined` at the rider.
+ */
+function webglReason(error: unknown): string | null {
+  const status = (error as { statusMessage?: unknown } | null)?.statusMessage;
+  return typeof status === "string" && status.trim() ? status.trim() : null;
+}
+
 export type MapMarkerKind =
   | "pickup"
   | "destination"
@@ -492,6 +505,13 @@ export function MapView({
    * actually broken is one API key.
    */
   const [degraded, setDegraded] = useState(false);
+  /*
+   * True when the map could not start at all — the one failure the screen had
+   * no answer for. See the guard around the constructor below.
+   */
+  const [unavailable, setUnavailable] = useState(false);
+  /** Whatever the browser said when it refused the WebGL2 context, if anything. */
+  const [unavailableReason, setUnavailableReason] = useState<string | null>(null);
 
   /** Cleared when the user pans, so following never fights a gesture. */
   const followRef = useRef(true);
@@ -583,23 +603,49 @@ export function MapView({
     // the cleanup below trips the exhaustive-deps rule otherwise.
     const markerEntries = markersRef.current;
 
-    const map = new MapLibreMap({
-      container,
-      style: mapStyle(),
-      center: [initial.current.center.lng, initial.current.center.lat],
-      zoom: initial.current.zoom,
-      attributionControl: false,
-      interactive: initial.current.interactive,
-      // The province is the world. Without this the map is a generic slippy map:
-      // a pinch goes to the satellite, a stray drag lands in Kota Kinabalu, and
-      // the tiles loaded outside the region are ones nobody here rides in. Pinned
-      // to Bukidnon's box, with a margin baked into the bounds themselves for
-      // the barangays that sit just over the line in OSM's reckoning.
-      maxBounds: [
-        [REGION.bounds.minLng, REGION.bounds.minLat],
-        [REGION.bounds.maxLng, REGION.bounds.maxLat],
-      ],
-    });
+    /*
+     * A map that cannot start has to say so.
+     *
+     * Two of the three ways this screen can lose its map are already answered
+     * for: a style that will not load falls back to OpenStreetMap, and tiles
+     * that will not load raise the degraded notice. The third had no answer at
+     * all. maplibre-gl v6 needs a WebGL2 context and *throws* when the browser
+     * will not give it one — hardware acceleration switched off, a driver on
+     * the blocklist, a virtual machine or a remote renderer with no GPU. Thrown
+     * from an effect there is no UI to catch it: the trace is a console line
+     * nobody is reading, and the screen keeps its furniture — the centre pin,
+     * zoom buttons that do nothing, an empty rectangle — which a rider cannot
+     * tell apart from an app that is broken.
+     *
+     * The constructor is the only thing inside the guard. Everything after it
+     * needs a map that exists.
+     */
+    let map: MapLibreMap;
+    try {
+      map = new MapLibreMap({
+        container,
+        style: mapStyle(),
+        center: [initial.current.center.lng, initial.current.center.lat],
+        zoom: initial.current.zoom,
+        attributionControl: false,
+        interactive: initial.current.interactive,
+        // The province is the world. Without this the map is a generic slippy
+        // map: a pinch goes to the satellite, a stray drag lands in Kota
+        // Kinabalu, and the tiles loaded outside the region are ones nobody
+        // here rides in. Pinned to Bukidnon's box, with a margin baked into the
+        // bounds themselves for the barangays that sit just over the line in
+        // OSM's reckoning.
+        maxBounds: [
+          [REGION.bounds.minLng, REGION.bounds.minLat],
+          [REGION.bounds.maxLng, REGION.bounds.maxLat],
+        ],
+      });
+    } catch (error) {
+      setUnavailable(true);
+      setUnavailableReason(webglReason(error));
+      console.error("[fetch] the map could not start", error);
+      return;
+    }
     mapRef.current = map;
 
     const handleDown = () => {
@@ -1174,7 +1220,7 @@ export function MapView({
 
       {/* Controls. 44px on a phone, where these get pressed with a thumb on a
           moving bus; they shrink back on pointer devices. */}
-      {interactive ? (
+      {interactive && !unavailable ? (
         <div className="absolute right-3 top-3 z-10 flex flex-col gap-2">
           <button
             type="button"
@@ -1200,6 +1246,35 @@ export function MapView({
           >
             <Crosshair className="size-5 sm:size-4" />
           </button>
+        </div>
+      ) : null}
+
+      {/*
+          A map that never started, said out loud.
+
+          Covers the canvas, so the pin and the controls behind it — which are
+          real DOM and stay mounted — are not mistaken for a working map. The
+          second line is the browser's own answer when it gave one, because
+          "hardware acceleration is off" and "the GPU process would not boot"
+          are different problems with different fixes.
+      */}
+      {unavailable ? (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-secondary/70 px-5">
+          <div className="max-w-[22rem] rounded-lg border border-border bg-background/95 px-3.5 py-3 text-center shadow-sm">
+            <p className="text-xs font-medium text-foreground">
+              This browser will not start the map.
+            </p>
+            <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+              The map needs WebGL2, and this browser did not provide it. Turn on
+              hardware acceleration in the browser's settings, or open the app
+              in one that has it.
+            </p>
+            {unavailableReason ? (
+              <p className="mt-1 text-[10px] leading-snug text-muted-foreground/80">
+                {unavailableReason}
+              </p>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
