@@ -32,26 +32,83 @@ What the phone *does* own:
 cd mobile
 bun install            # or: npx expo install
 bun run typecheck
-bun start              # then press a for Android, i for iOS
+bun start              # JS bundle server only
 ```
 
 `bun run fix-deps` (`expo install --check`) aligns every `expo-*` package with
 the SDK version this `package.json` declares.
 
+**`bun start` cannot open this app on a phone.** `@rnmapbox/maps` is a native
+module, so Expo Go has no Mapbox SDK to link against and the map screen cannot
+render. Use `bun run android` — a development build — or the APK flow below.
+
 ## Configuration
 
-`app.json` → `expo.extra` carries the two keys the app needs at build time:
+`app.json` → `expo.extra` carries the keys the app needs at build time:
 
 | Key | What it is |
 | --- | --- |
 | `convexUrl` | The Convex deployment. The same one the web app uses. |
 | `mapTilerKey` | Address search and reverse geocoding. |
 | `orsKey` | OpenRouteService token for road distance. |
+| `mapboxAccessToken` | The **public** `pk.` token the Mapbox map screen renders with. |
 
 `orsKey` is empty by default. Without it the app prices trips on the
 straight-line distance, which the server also accepts — the quote stays honest,
 it is just a little lower than the browser's road-based one. Paste the same
 token the web build uses as `VITE_ORS_KEY`.
+
+## Building an APK
+
+```bash
+cd mobile
+bun install
+bun run typecheck
+bunx expo prebuild --platform android --no-install   # generates ./android (gitignored)
+bunx expo run:android                                # builds, installs and launches
+```
+
+`expo run:android` is a development build — it needs a connected device or a
+running emulator, a JDK 17+, and `ANDROID_HOME` pointing at an SDK with platform
+36 and its build-tools. For a plain debug APK without launching it:
+
+```bash
+cd mobile/android && ./gradlew assembleDebug
+# mobile/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+`android/` is in `.gitignore`: it is generated, and `expo prebuild --clean`
+rewrites it. Change the app through `app.json` and the config plugins, never by
+editing the generated project.
+
+### The Mapbox token
+
+Two different tokens, and only one of them matters here:
+
+- **`mapboxAccessToken`** (public, `pk.`) — what the map actually needs. It lives
+  in `app.json` → `expo.extra` and is handed to the SDK at runtime by
+  `configureMapbox()`. Without it `hasMapboxToken()` is false, the map falls back
+  to an undefined style, and the route line is never drawn.
+- **The secret downloads token** (`sk.`) — **not required.** Mapbox removed the
+  token requirement from the `releases/maven` repository, and the current
+  installation guide configures that repo with no credentials at all. The
+  `@rnmapbox/maps` plugin still emits the authentication block for backward
+  compatibility, but it is skipped when no token is present, so an APK builds
+  without one.
+
+If you are on an older `@rnmapbox/maps` or a Mapbox SDK that still demands it,
+supply it **outside the repository** — the plugin reads either the
+`MAPBOX_DOWNLOADS_TOKEN` Gradle property or the `RNMAPBOX_MAPS_DOWNLOAD_TOKEN`
+environment variable:
+
+```bash
+# ~/.gradle/gradle.properties  (never inside mobile/android/)
+MAPBOX_DOWNLOADS_TOKEN=sk.xxxxxxxx
+```
+
+Do not pass it as `RNMapboxMapsDownloadToken` in `app.json`: the plugin's own
+warning says that value is written into `gradle.properties`, which would put the
+secret in the build tree.
 
 ## What is here
 
