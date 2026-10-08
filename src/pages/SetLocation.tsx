@@ -3,6 +3,7 @@ import { MapView, type MapMarker } from "@/components/map/MapView";
 import { PlaceSearch } from "@/components/ride/PlaceSearch";
 import { Button } from "@/components/ui/button";
 import { useCurrentLocationContext } from "@/components/CurrentLocationProvider";
+import { useAutoDetectOnBooking } from "@/hooks/use-current-location";
 import { useRecentDestinations } from "@/hooks/use-recent-destinations";
 import {
   locationStepUrl,
@@ -115,11 +116,18 @@ export default function SetLocation({ step }: { step: LocationStep }) {
   const prefill = readBookingPrefill(searchParams);
   const existing = step === "pickup" ? prefill.pickup : prefill.destination;
 
-  // One fix for the whole session, requested as the app opened — see
-  // `useCurrentLocation`. Both location screens read it rather than asking the
-  // browser again, so the address shown here and the address shown on the
-  // booking screen can never disagree about where the commuter is.
+  // One fix for the whole session — see `useCurrentLocation`. Both location
+  // screens read it rather than asking the browser again, so the address shown
+  // here and the address shown on the booking screen can never disagree about
+  // where the commuter is.
+  //
+  // The request itself starts on this screen (and on the booking form): the
+  // provider no longer asks when the app loads, so this is the tap the
+  // permission prompt is tied to. Called for both steps — a commuter sent
+  // straight to the drop-off still needs a fix for the crosshair control to be
+  // usable at all.
   const here = useCurrentLocationContext();
+  useAutoDetectOnBooking(here);
   const savedPlaces = useQuery(api.savedPlaces.listMine);
   const recents = useQuery(api.recentPlaces.listRecent);
   // The on-device list, which records a destination the moment it is picked —
@@ -561,7 +569,21 @@ export default function SetLocation({ step }: { step: LocationStep }) {
               choose(next);
             }
           }}
-          onPick={editing ? choose : undefined}
+          // A tap places the pin — and enters Edit to do it, because the pin
+          // only follows the map while the screen is an editor.
+          //
+          // A tap used to do nothing until Edit had been pressed first, which
+          // reads as a broken map: the booking screen's own hint sends people
+          // here to set the address by tapping, and the one gesture everybody
+          // tries was inert. Panning is unaffected — the settle rule above only
+          // commits a move bigger than the pin's own precision — so exploring a
+          // market without changing the answer still works, and the long-press
+          // held pin on the drop-off step is untouched for as long as no plain
+          // tap has been made.
+          onPick={(next) => {
+            if (!editing) setEditing(true);
+            choose(next);
+          }}
           onLongPress={step === "destination" && !editing ? dropHeldPin : undefined}
           // The line between the ends, so the destination screen answers "how
           // far is this" without a second screen. Only when both ends exist —
