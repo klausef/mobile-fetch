@@ -17,6 +17,7 @@ import { useMutation, useQuery } from "convex/react";
 import { formatDistanceToNow } from "date-fns";
 import { Bell } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { ProfileNavigationRail } from "@/components/ProfileNavigationRail";
 import { NavLink } from "react-router";
 
 function NavItem({ to, children }: { to: string; children: ReactNode }) {
@@ -163,6 +164,19 @@ export function AppShell({
       <main className="safe-bottom-offset mx-auto w-full max-w-7xl flex-1 p-4 sm:p-6">
         {children}
       </main>
+
+      {/* Private workspace navigation, for signed-in accounts that want a
+          persistent rail instead of the mobile bottom tabs. It is a sidebar
+          because the authenticated app is at home on a desktop monitor, and
+          the same routes still live in the top header for everyone else. */}
+      {profile && (
+        <nav
+          className="hidden shrink-0 lg:flex lg:flex-col"
+          aria-label="Workspace navigation"
+        >
+          <ProfileNavigationRail currentPath={typeof window !== "undefined" ? window.location.pathname : "/"} />
+        </nav>
+      )}
 
       <BottomTabs
         tabs={bottomTabs}

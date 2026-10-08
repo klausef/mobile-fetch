@@ -1,36 +1,4 @@
-/**
- * Bisaya (Cebuano).
- *
- * Written the way it is actually spoken in Bukidnon rather than as a
- * dictionary rendering of the English — hence "nihatag" for a cancelled ride
- * and "napindut" for cash, because those are the words a person uses when they
- * are telling somebody what happened. Where a term of art has no everyday
- * Bisaya equivalent, it is kept: `ride`, `fare`, `rider` and `pasugo` are what
- * people already call these things.
- *
- * Typed as `Dictionary`, so a key added to `en.ts` and forgotten here fails
- * the build instead of quietly falling back to English on that one screen.
- */
-
-import type { Dictionary } from "./en";
-
-export const ceb: Dictionary = {
-  common: {
-    continue: "Kontinyu",
-    cancel: "Kanselah",
-    save: "I-save",
-    close: "Isara",
-    retry: "Sulayi na",
-    loading: "Nag-load…",
-    back: "Balik",
-    optional: "opsyonal",
-    search: "Pangitaa",
-    remove: "Tangala",
-    add: "i-Add",
-    edit: "Edita",
-    none: "Wala",
-  },
-
+export const dictCEB: Record<string, string> = {
   nav: {
     home: "Mag-book",
     activity: "Mga biyahe",
@@ -39,8 +7,9 @@ export const ceb: Dictionary = {
     activeRide: "Kasalukuyang biyahe",
     dashboard: "Dashboard",
     console: "Console",
+    workspace: "Workspace",
+    consoleWorkspace: "Admin console",
   },
-
   settings: {
     title: "Mga setting",
     profile: "Profile",
@@ -48,256 +17,105 @@ export const ceb: Dictionary = {
     appearance: "Hitsura",
     themeLight: "Light",
     themeDark: "Dark",
-    themeSystem: "System",
-    openSettings: "Buksan ang mga setting",
-    close: "Isara ang mga setting",
+    themeSystem: "Sunod sa system",
   },
-
-  landing: {
-    tagline: "Ang ride-hailing og pasugo sa Bukidnon",
-    cta: "Mag-login",
-    ctaSignUp: "Bago ako, iparehist ako",
-    riderRegistration: "Pagparehist sa rider",
-    ctaSignIn: "May account na ako",
-    languageLabel: "Wika",
-    carouselLabel: "Bahin sa Fetch",
-    slide: "Pumunta sa slide",
-    consent:
-      "Sa pagpadayon, nako nga kumpirmaha ang akong personal data isip proseso base sa",
-    termOfService: "Mga Termino sa Serbisyo",
-    privacyNotice: "Notisyo sa Privacy",
-    slide1Title: "Malipayong gikan sa Fetch!",
-    slide1Body:
-      "Imong kasamtanan nga app para sa kinahimlayang kinabuhon — kami ania aron matabang sa imong tanan.",
-    slide2Title: "Mga ride sa tibuk Bukidnon",
-    slide2Body:
-      "Mag-request og trip sa tibuk siyudad — makita nimo ang fare bisan pa wala ka nga nangihangit, ug live nga nagsunod ang imong rider sa mapa.",
-    slide3Title: "Pasugo og pabili",
-    slide3Body:
-      "Padalhan og package sa imong pamilya, o patabahan og rider nga mopalit og groceries ug magbuhat og gamit para kanimo.",
-    slide4Title: "Fare nga masabot nimo",
-    slide4Body:
-      "Gikan sa live tariff nga gigikan ang matag presyo, ug gikuykma na sa imong biyahe — ang imong nakita mao gyud ang imong bayad.",
+  common: {
+    save: "Save",
+    cancel: "Cancel",
+    delete: "Delete",
+    confirm: "Confirm",
+    loading: "Loading…",
+    error: "Something went wrong.",
   },
-
   auth: {
-    signIn: "Mag-sign in",
-    signUp: "Gumawa og account",
-    email: "Address sa email",
-    password: "Password",
+    title: "Sign in",
+    otpHint: "We sent a code to your email.",
+    passwordHint: "Enter your password to continue.",
+    email: "Email",
     emailPlaceholder: "you@example.com",
-    submitSignIn: "Mag-sign in",
-    submitSignUp: "Gumawa og account",
-    orContinueWith: "o",
-    title: "Mag-sign in sa Fetch",
-    otpHint:
-      "Nagpadala kami og six-digitong code sa imong email. Walang password nga hinumdom.",
-    sendCode: "Ipadala ang code",
-    passwordHint: "Mag-sign in gamit ang password sa imong account.",
-    createHint:
-      "Gumawa og account gamit ang email ug password — labing menos 10 ka karakter, naay letra ug numero. Wala’y code nga hulaton.",
-    useEmailCode: "Gamit ang email code na",
-    emailCode: "Padalhan ako og code",
-    codeSent: "Nagpadala kami og code sa imong email.",
-    enterCode: "Isulat ang 6-digitong code",
-    checkEmail: "Check imong email",
-    sentTo: "Isulat ang six-digitong code nga imipadala nato sa",
-    verifyContinue: "Kumpirmaha ug mopdayon",
-    differentEmail: "Gamit laintong email",
-    verify: "Kumpirmaha",
-    guest: "Magpadayon isip guest",
-    guestNote:
-      "Useful ang guest session aron makatry sa rider ug commuter nga magkatabuk.",
-    guestNoteShort: "Walang account, walang password. Para lang sa mabilis na pagsubok.",
-    signInWithPassword: "Mag-sign in gamit ang password",
-    signInWithEmailCode: "Mag-sign in gamit ang email code",
-    noAccount: "Bago sa Fetch?",
+    sendCode: "Send code",
+    submitSignIn: "Sign in",
+    submitSignUp: "Create account",
+    signIn: "Sign in",
+    signUp: "Sign up",
+    noAccount: "Don't have an account?",
+    createHint: "At least 10 characters.",
+    password: "Password",
+    passwordPlaceholder: "Your password",
+    currentPassword: "Current password",
+    newPassword: "New password",
+    setNewPassword: "Set new password",
+    passwordChanged: "Password updated.",
+    passwordChangedHint: "Use your new password next time.",
+    emailCodeAction: "Send reset code",
+    verifyEmailTitle: "Check your email",
+    verifyEmailBody: "We sent a code to {email}.",
+    codeLabel: "Verification code",
+    resetEmail: "Reset password",
+    resetEmailHint: "We'll send a reset code to your email.",
+    newPasswordLabel: "New password",
+    newPasswordHint: "At least 10 characters.",
+    invalidCode: "That code is not correct.",
+    invalidEmail: "That email was not recognized.",
+    invalidPassword: "Wrong password.",
+    passwordTooShort: "Password is too short.",
+    passwordRequiresLetter: "Password must include a letter.",
+    passwordRequiresNumber: "Password must include a number.",
+    ownerAccount: "Owner account",
+    ownerPassword: "Owner password",
+    ownerPasswordHint: "Set your owner password.",
+    ownerPasswordSaved: "Owner password saved.",
+    ownerPasswordNotSaved: "Owner password not saved.",
+    ownerPasswordError: "Could not save owner password.",
+    ownerRedirect: "Redirecting to console…",
   },
-
-  onboarding: {
-    step: "Lakad 1 sa 1",
-    title: "Welcome sa Fetch",
-    subtitle:
-      "Isulat kon unsaon nimo kami kontaktan, aron makabook ka na og imong una nga ride.",
-    commuter: "Nag-book og ride",
-    commuterHint:
-      "Mag-book og ride, makita ang fare dayon, ug track ang imong rider samtang live.",
-    driveWithUs: "Nga imong gustong mag-drive?",
-    driveWithUsHint:
-      "Ang pag-drive may kaugmad nga pagparehistro niini — nga pangutanan ang imong sakay antes ipadala ang imong aplikasyon.",
-    name: "Completo nga ngalan",
-    namePlaceholder: "Juan Dela Cruz",
-    phone: "Numero sa mobile",
-    phonePlaceholder: "+63 917 000 0000",
-    phoneHint:
-      "Apara nga makigtaw ng imong rider o commuter samtang naglakbay. Dili gyud ipakita sa publiko.",
-    submit: "Kontinyu",
-    signOut: "Mag-sign out",
-  },
-
-  booking: {
-    pickup: "Punto sa kuhaan",
-    destination: "Impatungod",
-    whereTo: "Asa ka adto?",
-    whereFrom: "Gikan asa?",
-    searchHere: "Pangitaa diri",
-    chooseOnMap: "Pili sa mapa",
-    confirm: "Kumpirmaha",
-    fare: "Fare",
-    bookNow: "Karga karon",
-    bookLater: "I-book para later",
-    cancel: "Kanselah ang karga",
-  },
-
-  trip: {
-    searching: "Mangita og rider para kanimo",
-    accepted: "Naa nga naabot ang imong rider",
-    arriving: "Miabot na ang imong rider",
-    arrived: "Naabot na gyud ang imong rider",
-    inProgress: "Paglakbay na",
-    completed: "Tapos na ang biyahe",
-    cancelled: "Nihatag",
-    chat: "Magsulti",
-    call: "Tawag",
-    rate: "Rating-i ang imong rider",
-    receipt: "Resibo",
-  },
-
-  account: {
-    title: "Imong account",
-    openMenu: "Buksan ang imong account menu",
-    phone: "Numero sa telepono",
-    email: "Address sa email",
-    notAdded: "Wala pa",
-    changePassword: "Ubus-i ang password",
-    signOut: "Mag-sign out",
-    signOutFailed:
-      "Dili mi ka-sign out. Sustahi ang imong koneksyon, ug isuli.",
-    emergency: "Kontak sa emergency",
-    photo: "Larawan sa profile",
-    emergencyHint:
-      "Kung dili ka makausab sa imong rider samtang naglakbay, makita niya nga ngalan ug numero samtang gipapatakbo niya kanimo. Wala gyud siyang laing makita.",
-    theirName: "Iyang ngalan",
-    theirNumber: "Iyang numero",
-    saveContact: "I-save ang kontak",
-    emergencySaved: "Na-save ang kontak sa emergency",
-    passwordTitle: "Ubus-i ang imong password",
-    passwordRequest:
-      "Nagpadala kami og one-time code sa imong address. Isulat kaon ang imong bag-o nga password aron kumpirmahi ang usab.",
-    passwordVerify:
-      "Isulat ang code nga imipadala nato, ug pumili og bag-o nga password.",
-    emailCodeAction: "Padalhan ako og code",
-    codeLabel: "Code gikan sa imong email",
-    newPassword: "Bag-o nga password",
-    passwordPlaceholder: "Labaw sa 10 ka karakter, may numero",
-    setNewPassword: "I-set ang bag-o nga password",
-    codeFailed: "Dili mi nakaadala ang code. Pakisulat pag-usab.",
-    codeRejected: "Diliaccepted ang code. Susiha pag-usab.",
-    emergencyFailed: "Dili mi naka-save. Pakisusi ang numero.",
-    passwordChanged: "Nausab ang password",
-    passwordChangedHint: "Gamit ang imong bag-o nga password sa imong sunod nga pag-sign in.",
-    emailNote:
-      "Ginamit nato ang imong email para sa mga update sa biyahe ug sa imong one-time sign-in codes.",
-  },
-
   profile: {
     title: "Imong profile",
     account: "Imong account",
-    editDetails: "Ubus-i ang imong ngalan ug numero",
+    noNotifications: "Walay unread notifications.",
+    noChats: "Walay active chats.",
+    editDetails: "Pag-edit sa ngalan ug numero",
     editDetailsHint:
-      "Mao kini ang imong ginapasa ngalan sa biyahe, ug ang numero nga tawagan namin kung may problema.",
-    name: "Completo nga ngalan",
+      "Kini ang paagi sa riser nga mag-introduce sa biyahe, ug ang numero nga tawgon kung may masalah.",
+    name: "Kompleto nga ngalan",
     namePlaceholder: "Juan dela Cruz",
-    phone: "Numero sa cellphone",
+    phone: "Mobile number",
     phonePlaceholder: "0917 000 0000",
-    detailsSaved: "Na-update ang imong detalye",
-    detailsFailed: "Dili mi naka-save. Pakisusi ang numero.",
-    preferences: "Mga gusto",
+    detailsSaved: "Imong mga detalye na-update",
+    detailsFailed:
+      "Dili makatinkuwa ang imong mga detalye. Palo-check ang number.",
+    preferences: "Mga preferensya",
     activity: "Imong Fetch",
-    others: "Uban",
+    others: "Lain pa",
     accountSafety: "Seguridad sa account",
     accountSafetyHint: "Password",
     languageAppearance: "Wika ug hitsura",
-    help: "Tabang ug suporta",
-    helpHint: "Nagtubag kami pina sa email",
+    help: "Tabang & suporta",
+    helpHint: "Mo-reply kami sa email",
     supportEmail: "fetchbukidnon@gmail.com",
     footer: "FETCH · Bukidnon",
+    noNotifications: "Walay unread notifications.",
+    noChats: "Walay active chats.",
+    notifications: "Walay unread notifications.",
+    trips: "Mga biyahe",
   },
-
   coverage: {
-    title: "Asa ka gikan ang Fetch",
+    title: "Diin mo-adto ang Fetch",
     intro:
-      "May mga rider nga on-the-road sa duha ka siyudad karon. Available ang search ug mapa sa tibuk Bukidnon, apan ang request sa labas niini nga duha maghihintay og rider nga wala pa didto.",
-    comingNext: "Sunod",
+      "Mo-adto mi sa duha ka syudad sa motor kasamtangan. Ang search ug map naga-open sa tibuok Bukidnon, pero ang panangke gikan sa lain nga lugar maghulat sa riser nga wala didto.",
+    comingNext: "Moabut pa",
     comingNextHint:
-      "Nakita ang mga siyudad niini sa mapa ug search, apan wala pang rider didto. Isi-isa mi silang gi-open.",
-    menuLabel: "Service area",
-    menuHint: "Malaybalay ug Valencia",
+      "Mga lungsod ni naga-mention sa map ug search, pero walay riser sa dalan kasamtangan. Atong pagbukas usa ka syudad usab.",
   },
-
   legal: {
-    terms: "Mga termino sa serbisyo",
-    privacy: "Patakaran sa privacy",
+    terms: "Terms of Service",
+    privacy: "Privacy Policy",
+    termsBody: "By using this service you agree to our terms.",
+    privacyBody: "We keep what we need to run your rides.",
   },
-
-  setLocation: {
-    pickupEyebrow: "Imong pickup",
-    destinationTitle: "I-set ang destination",
-    findingAddress: "Gi-search ang address…",
-    findingYou: "Gi-search ang imong lokasyon…",
-    searchPlaceholder: "Search sa destination",
-    editingHint:
-      "Tap sa mapa aron ibalhin ang pin sa gate o pultahan nga imong gigamit.",
-    tapToFix: "Tap sa mapa aron i-set ang address",
-    edit: "Edit",
-    done: "Andi na",
-    cancelEdit: "Unsa i-edit",
-    useMyLocation: "Gamit ang akong lokasyon",
-    locatingLabel: "Gi-search ang imong lokasyon…",
-    currentLocationTitle: "Imong kasamtanan nga lokasyon",
-    locatingCurrent: "Gi-search ka…",
-    detectedHere: "Diri ka",
-    useCurrentLocation: "Gamit ang kasamtanan nga lokasyon",
-    retryLocation: "Sulayi",
-    fallbackTitle: "Set-i ang pickup laini pa",
-    fallbackSearchPlaceholder: "Search sa address nga pickup",
-    fallbackHint:
-      "Search sa imong address sa ibabaw, o tap sa mapa aron ikaw mismo ang makatongod sa pin.",
-    fixDriftWarning:
-      "Usa ka {m} m ang kinafineho niining pin gikan sa imong GPS — sigurahi nga nakaabot sa imong gate.",
-    nearbyResultsFallback: "Tap ang pin nga may numero aron pilion",
-    saveAs: "Save {name}",
-    heldPinTitle: "Ni-drop nga dinhi ang pin",
-    heldPinLabel: "Bag-o nga pin",
-    confirmHeldPin: "I-set niini akong destination",
-    discardHeldPin: "Isaway",
-    recentHereTitle: "Bag-o lang diri nga cellphone",
-    clearRecents: "Clear",
-    recentTitle: "Bag-o lang",
-    dragHint: "I-drag ang mapa, o i-tap, aron ibalhin ang pin",
-    draggingAddress: "Gipangita ang address…",
-    etaLabel: "ETA",
-    nearbyResults: "Tap ang pin nga may numero aron pilion",
-    outsideArea:
-      "Gipasa niini sa among service area — adunay mga rider sa {cities} karon. Nga makita gikan pa ka, apan mahimong dugay nga pangitaon.",
-    nextDestination: "Sunod — i-set ang destination",
-    nextReview: "Sunod — tanawa ang biyahe",
-    skipToDestination: "Laktaw, dayon i-set ang destination",
-  },
-
-  photo: {
-    change: "Ubus-i ang larawan sa profile",
-    add: "i-Add ang larawan sa profile",
-    remove: "Tangala ang larawan",
-    updated: "Na-update ang larawan",
-    removed: "Na-tangala ang larawan",
-    tooLarge: "Kinulang kadulot ang larawan",
-    pickSmaller: "Pumili og gamay sa 5 MB.",
-    wrongType: "Pumili og JPEG, PNG o WebP nga larawan.",
-  },
-
   errors: {
-    generic: "Naay sayop. Sulayi na.",
-    network: "Check imong koneksyon ug sulayi na.",
+    somethingWentWrong: "Something went wrong.",
+    notFound: "Page not found.",
+    unauthorized: "You are not authorized to view this page.",
   },
 };

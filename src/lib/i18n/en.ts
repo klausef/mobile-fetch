@@ -37,6 +37,8 @@ export const en = {
     activeRide: "Current ride",
     dashboard: "Dashboard",
     console: "Console",
+    workspace: "Workspace",
+    consoleWorkspace: "Admin console",
   },
 
   settings: {
