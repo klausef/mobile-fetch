@@ -9,7 +9,7 @@
  */
 
 import { useRef, useState, useEffect } from "react";
-import { StyleSheet, Text, View, ActivityIndicator } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { MapView } from "@rnmapbox/maps";
 import { Camera } from "@rnmapbox/maps";
 import { ShapeSource } from "@rnmapbox/maps";
