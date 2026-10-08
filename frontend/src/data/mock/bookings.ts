@@ -112,7 +112,7 @@ const timelineFor = (spec: SeedSpec): Booking["timeline"] => {
       ? ["pending", "accepted", "cancelled"]
       : order.slice(0, order.indexOf(spec.status) + 1);
   return reached.map((status, index) => ({
-    status,
+    status: status as Booking["status"],
     at: minutesAgo(spec.startedHoursAgo * 60 - index * 4),
     ...(spec.riderName ? { by: spec.riderName } : {}),
   }));

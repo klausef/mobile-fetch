@@ -5,6 +5,8 @@ import type { ActiveTripView } from "../types";
  * The one action that moves the trip forward, plus the escape hatches. Only
  * the next legal step is offered — the buttons are the transition table.
  */
+import { View } from "react-native";
+
 export function TripActions({
   view,
   busy,

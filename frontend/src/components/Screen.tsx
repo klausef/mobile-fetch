@@ -1,4 +1,5 @@
-import { ScrollView, Text, View, type ReactNode } from "react-native";
+import { ScrollView, Text, View } from "react-native";
+import type { ReactNode } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ChevronLeft } from "lucide-react-native";
 import { Pressable } from "react-native";

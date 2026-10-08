@@ -1,4 +1,5 @@
-import { Text, View, type ReactNode } from "react-native";
+import { Text, View } from "react-native";
+import type { ReactNode } from "react";
 
 /** The card everything else sits in. */
 export function Card({

@@ -1,4 +1,5 @@
-import type { Booking, MapCoordinate, MapMarker } from "@/services/maps/mapProvider";
+import type { MapCoordinate, MapMarker } from "@/services/maps/mapProvider";
+import type { Booking } from "@/types";
 
 /** The trip the rider is working, shaped for its screen. */
 export interface ActiveTripView {
