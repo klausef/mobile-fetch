@@ -168,14 +168,14 @@ export function useGeolocation({
       : UNSUPPORTED_STATE,
   );
   const watchIdRef = useRef<number | null>(null);  const [permission, setPermission] = useState<GeoPermission>("unknown");
-  if (!USE_GEOLOCATION_PERMISSION_ENABLED) {
-    return {
-      ...state,
-      locate,
-      permission,
-      blockedByEnvironment: environmentHint(),
-    };
-  }
+  if (!USE_GEOLOCATION_PERMISSION_ENABLED) {  return {
+    ...state,
+    locate,
+    permission,
+    blockedByEnvironment: environmentHint(),
+  };
+}
+
 
 
 
@@ -194,8 +194,7 @@ export function useGeolocation({
     const read = (result: PermissionStatus) => {
       if (cancelled) return;
       setPermission(
-        result.state === "granted" || result.state === "denied" || result.state === "prompt"
-          ? result.state
+        result.state === "granted" || result.state === "denied" || result.state === "prompt"                  ? result.state
           : "unknown",
       );
     };
