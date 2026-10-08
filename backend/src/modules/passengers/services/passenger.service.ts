@@ -6,7 +6,7 @@ export function getPassenger(id: string): Passenger | undefined {
 }
 
 export function getPassengerByEmail(email: string): Passenger | undefined {
-  return Array.from(db.passengers.values()).find((p) => (p as any).email?.toString() === email);
+  return Array.from(db.passengers.values()).find((p) => (p as any).email === email);
 }
 
 export function createPassenger(input: CreatePassengerInput): Passenger {

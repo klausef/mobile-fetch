@@ -1,5 +1,5 @@
 import { db } from "../../database/db";
-import { type Service } from "../types";
+import type { Service } from "../types";
 
 export function listServices() {
   return db.getServices();

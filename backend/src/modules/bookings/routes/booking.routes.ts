@@ -10,7 +10,19 @@ import {
   getMyTrips,
   getEarnings,
 } from "../services/booking.service";
-import type { BookingStatus } from "../types";
+import { Router } from "express";
+import {
+  getMyBookings,
+  getBooking,
+  createBooking,
+  cancelBooking,
+  getAvailableRequests,
+  acceptBooking,
+  updateBookingStatus,
+  getMyTrips,
+  getEarnings,
+} from "../services/booking.service";
+import type { Booking, BookingStatus } from "../types";
 
 const bookings = Router();
 

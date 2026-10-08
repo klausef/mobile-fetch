@@ -10,6 +10,10 @@ export interface Rider {
   totalEarnings: number;
 }
 
+export interface RiderProfile {
+  rider: Rider;
+  setOnline(online: boolean): Rider;
+}
 
 export const MOCK_RIDERS: Rider[] = [
   { id: "rider-1", name: "Marco Villanueva", email: "marco@fetch.app", phone: "0918 555 0177",
