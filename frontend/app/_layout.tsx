@@ -1,28 +1,28 @@
-import { ConvexAuthProvider } from "@convex-dev/auth/react";
+import "../src/theme/global.css";
+
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { convex } from "@/services/api/convex";
-import { secureStoreTokenStorage } from "@/services/api/auth-storage";
-import { colors } from "@/theme";
+import { colors } from "@/theme/colors";
 
-/** The root layout: providers first, then the navigation stack. */
+/** Providers first, then the navigation stack. */
 export default function RootLayout() {
   return (
-    <SafeAreaProvider>
-      <ConvexAuthProvider client={convex} storage={secureStoreTokenStorage}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
         <StatusBar style="dark" />
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.paper },
+          }}
+        >
           <Stack.Screen name="index" />
-          <Stack.Screen name="auth" />
-          <Stack.Screen name="onboarding" />
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="ride" options={{ presentation: "card", animation: "slide_from_bottom" }} />
-          <Stack.Screen name="rider" options={{ presentation: "card", animation: "slide_from_right" }} />
-          <Stack.Screen name="vehicle" options={{ presentation: "card", animation: "slide_from_right" }} />
-          <Stack.Screen name="chat" options={{ presentation: "card", animation: "slide_from_right" }} />
+          <Stack.Screen name="passenger" />
+          <Stack.Screen name="rider" />
         </Stack>
-      </ConvexAuthProvider>
-    </SafeAreaProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

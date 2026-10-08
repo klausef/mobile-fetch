@@ -1,205 +1,32 @@
+import { Component, type ReactNode } from "react";
+import { getMapProvider, type MapSurfaceProps } from "@/services/maps/mapProvider";
+import { FallbackMap } from "@/services/maps/FallbackMap";
+
 /**
- * Mapbox map components for the mobile app.
+ * The map every screen renders.
  *
- * The first Mapbox surface in FETCH. It renders a Mapbox style, the user's current
- * location puck, pickup and destination pins, and the road route between them.
- *
- * The existing web app uses its own MapLibre-based map and is not touched by this
- * file.
+ * Which implementation draws it is decided by `services/maps/mapProvider.ts`,
+ * not here, and not by the screens: swapping MapLibre for another renderer is
+ * a one-file change that no screen ever notices.
  */
 
-import { useRef, useState, useEffect } from "react";
-import { StyleSheet, Text, View } from "react-native";
-import { MapView } from "@rnmapbox/maps";
-import { Camera } from "@rnmapbox/maps";
-import { ShapeSource } from "@rnmapbox/maps";
-import { LineLayer } from "@rnmapbox/maps";
-import { UserLocation } from "@rnmapbox/maps";
-import { PointAnnotation } from "@rnmapbox/maps";
+class MapErrorBoundary extends Component<{ fallback: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
 
-import { LatLng, DEFAULT_TARIFF } from "@/shared";
-import { colors } from "@/theme";
-import {
-  straightLine,
-  drivingRoute,
-  type RouteCoordinate,
-} from "@/services/maps/route-geometry";
-import { hasMapboxToken, configureMapbox } from "@/services/maps/mapProvider";
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
 
-const MAPBOX_STYLE = "mapbox://styles/mapbox/streets-v12";
-
-// ORS uses the same HeiGIT key the web app uses for routing. Reached through the
-// pinned app config so the value is a build-time constant, not a runtime env lookup.
-function orsToken(): string {
-  try {
-    const constants = require("expo-constants").Constants as {
-      expoConfig?: {
-        extra?: { orsKey?: string };
-      };
-    };
-    const config = constants.expoConfig;
-    if (!config?.extra) return "";
-    return typeof config.extra.orsKey === "string"
-      ? config.extra.orsKey.trim()
-      : "";
-  } catch {
-    return "";
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
   }
 }
 
-export interface MapPin {
-  id: string;
-  coordinate: LatLng;
-  title?: string;
-}
-
-export interface MapRoute {
-  from: LatLng;
-  to: LatLng;
-}
-
-function geojsonForRoute(coordinates: RouteCoordinate[]): GeoJSON.Feature<GeoJSON.LineString> {
-  return {
-    type: "Feature",
-    geometry: {
-      type: "LineString",
-      coordinates,
-    },
-    properties: {},
-  };
-}
-
-export function MapboxMap({
-  pins,
-  route,
-  initialPosition,
-  onMapLoaded,
-}: {
-  pins?: MapPin[];
-  route?: MapRoute | null;
-  initialPosition?: LatLng;
-  onMapLoaded?: () => void;
-}) {
-  configureMapbox();
-
-  const mapRef = useRef<MapView>(null!);
-  const [routeGeometry, setRouteGeometry] = useState<RouteCoordinate[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!route?.from || !route?.to) {
-      setRouteGeometry([]);
-      return;
-    }
-    void drivingRoute(route.from, route.to, orsToken()).then((geometry) => {
-      if (!cancelled) setRouteGeometry(geometry);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [route?.from, route?.to]);
-
-  /*
-   * No token in the build, so say that instead of drawing nothing.
-   *
-   * `styleURL` is what brings the map its tiles, sprites and fonts, and the
-   * token that fills it in is read from `expo.extra.mapboxAccessToken` — which
-   * on Android is the `app.config` asset compiled into the APK, because a
-   * native app has no environment to read at runtime. The consequence is not
-   * obvious and it is the thing that wastes an afternoon: pasting the token
-   * into `app.json` and reloading the JS bundle changes nothing, because the
-   * manifest the app reads was baked in at build time. Without a style the
-   * native view still mounts and still paints its background, so the screen is
-   * an empty rectangle that is indistinguishable from an app that is broken.
-   *
-   * The remedy is a rebuild, and the token is public — it ships in every
-   * install either way — so there is nothing to hide by being quiet about it.
-   */
-  if (!hasMapboxToken()) {
-    return (
-      <View style={styles.missingToken}>
-        <Text style={styles.missingTokenTitle}>Map unavailable</Text>
-        <Text style={styles.missingTokenBody}>
-          This build carries no Mapbox access token, so there is no map to draw.
-          Put the public `pk.` token in `expo.extra.mapboxAccessToken` in
-          app.json and rebuild the app — reloading the bundle does not re-embed
-          it.
-        </Text>
-      </View>
-    );
-  }
-
+export function MapView(props: MapSurfaceProps) {
+  const { MapSurface } = getMapProvider();
   return (
-    <MapView
-      ref={mapRef}
-      style={styles.map}
-      styleURL={MAPBOX_STYLE}
-      onPress={() => {}}
-      onMapIdle={() => {
-        onMapLoaded?.();
-      }}
-    >
-      <Camera
-        zoomLevel={13}
-        centerCoordinate={initialPosition ? [initialPosition.lng, initialPosition.lat] : [125.1305726, 8.1550421]}
-        animationMode="none"
-      />
-
-      {routeGeometry.length > 0 && (
-        <ShapeSource id="route" shape={geojsonForRoute(routeGeometry)}>
-          <LineLayer
-            id="route-line"
-            style={{
-              lineColor: "#E1251B",
-              lineWidth: 4,
-              lineOpacity: 0.95,
-            }}
-          />
-        </ShapeSource>
-      )}
-
-      {pins?.map((pin) => (
-        <PointAnnotation
-          key={pin.id}
-          id={pin.id}
-          coordinate={[pin.coordinate.lng, pin.coordinate.lat]}
-          title={pin.title ?? undefined}
-        >
-          <Text>{pin.title ?? ""}</Text>
-        </PointAnnotation>
-      ))}
-
-      <UserLocation />
-    </MapView>
+    <MapErrorBoundary fallback={<FallbackMap {...props} />}>
+      <MapSurface {...props} />
+    </MapErrorBoundary>
   );
 }
-
-const styles = StyleSheet.create({
-  map: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  pinLabel: {
-    color: "#ffffff",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  missingToken: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingHorizontal: 28,
-    backgroundColor: colors.background,
-  },
-  missingTokenTitle: {
-    color: colors.ink,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  missingTokenBody: {
-    color: colors.textMuted,
-    fontSize: 13,
-    lineHeight: 19,
-    textAlign: "center",
-  },
-});

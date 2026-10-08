@@ -1,54 +1,107 @@
+import type { ComponentType } from "react";
+
 /**
- * Mapbox setup for the mobile app.
+ * The map abstraction.
  *
- * One place where the Mapbox React Native SDK is configured, so the rest of the
- * app just renders maps rather than fighting over which token to use or whether
- * `setAccessToken` has been called yet.
- *
- * The token is read from Expo app config (`expo.extra.mapboxAccessToken`), which
- * is a committed file — so treat this value as public. That is fine for what it
- * is: a `pk.` access token is designed to ship in a client, and it is scoped by
- * the URL restrictions on the Mapbox account, not by secrecy. A secret `sk.`
- * token must never be put here; those belong on the server.
+ * Screens never import a map library. They render `<MapView />` from
+ * `src/components`, which asks this module which implementation is active.
+ * That is the whole point of the seam: MapLibre today, something else later,
+ * and a working placeholder whenever the native SDK is not installed (Expo
+ * Go, a web preview, a CI bundle).
  */
 
-import Mapbox from "@rnmapbox/maps";
+/** `[longitude, latitude]` — the GeoJSON order every map wants. */
+export type MapCoordinate = [number, number];
 
-function readAppConfigAccessToken(): string {
-  // The field is `expoConfig`; `expo-constants` has no `expoConfigObject`, and
-  // its type ends in `Record<string, any>`, so reading the wrong name compiles
-  // and then silently yields "" at runtime — which is a map with no style and a
-  // route line that never draws. Fall back to an empty token only when the
-  // config genuinely is not there.
-  try {
-    const constants = require("expo-constants").Constants as {
-      expoConfig?: {
-        extra?: { mapboxAccessToken?: string };
-      };
+export type MapMarkerKind = "pickup" | "destination" | "rider";
+
+export interface MapMarker {
+  id: string;
+  label: string;
+  coordinate: MapCoordinate;
+  kind: MapMarkerKind;
+}
+
+export interface MapSurfaceProps {
+  markers?: MapMarker[];
+  /** The driving line between pickup and destination, in GeoJSON order. */
+  route?: MapCoordinate[];
+  center?: MapCoordinate;
+  zoomLevel?: number;
+  className?: string;
+}
+
+export type MapProviderId = "maplibre" | "fallback";
+
+export interface MapProvider {
+  id: MapProviderId;
+  label: string;
+  /** False when the native SDK is missing from this build. */
+  available: boolean;
+  MapSurface: ComponentType<MapSurfaceProps>;
+}
+
+/**
+ * OpenStreetMap raster tiles — the data source is a plain, unauthenticated
+ * tile URL, so the map needs no key and no external API to render.
+ *
+ * OpenStreetMap's tile usage policy requires visible attribution; every
+ * implementation renders `OSM_ATTRIBUTION` alongside the map.
+ */
+export const OSM_TILE_URL_TEMPLATE = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+export const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
+export const DEFAULT_CENTER: MapCoordinate = [120.9842, 14.5995];
+export const DEFAULT_ZOOM = 14;
+
+/**
+ * The active provider. The MapLibre implementation registers itself with
+ * `available: false` when its native module is missing, and the fallback is
+ * used instead — replacing the map means changing this function alone.
+ */
+export function getMapProvider(): MapProvider {
+  const { mapLibreProvider, fallbackProvider } = providers();
+  return mapLibreProvider.available ? mapLibreProvider : fallbackProvider;
+}
+
+let registered: {
+  mapLibreProvider: MapProvider;
+  fallbackProvider: MapProvider;
+} | null = null;
+
+/**
+ * Providers are resolved lazily so that importing this module never pulls the
+ * native SDK into a bundle that cannot use it.
+ */
+function providers(): {
+  mapLibreProvider: MapProvider;
+  fallbackProvider: MapProvider;
+} {
+  if (!registered) {
+    // Required lazily, not imported at the top: an eager import of a missing
+    // native module would crash the app, not just the map.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const maplibre = require("./MapLibreMap") as {
+      MapLibreSurface: ComponentType<MapSurfaceProps>;
+      isMapLibreAvailable: boolean;
     };
-    const configObject = constants.expoConfig;
-    if (!configObject?.extra) return "";
-    return typeof configObject.extra.mapboxAccessToken === "string"
-      ? configObject.extra.mapboxAccessToken.trim()
-      : "";
-  } catch {
-    return "";
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const fallback = require("./FallbackMap") as {
+      FallbackMap: ComponentType<MapSurfaceProps>;
+    };
+    registered = {
+      mapLibreProvider: {
+        id: "maplibre",
+        label: "MapLibre (OpenStreetMap tiles)",
+        available: maplibre.isMapLibreAvailable,
+        MapSurface: maplibre.MapLibreSurface,
+      },
+      fallbackProvider: {
+        id: "fallback",
+        label: "Preview placeholder",
+        available: true,
+        MapSurface: fallback.FallbackMap,
+      },
+    };
   }
+  return registered;
 }
-
-let configured = false;
-
-export function configureMapbox(): string {
-  const token = readAppConfigAccessToken();
-  if (token && !configured) {
-    Mapbox.setAccessToken(token);
-    configured = true;
-  }
-  return token;
-}
-
-/** True when the app was built with a Mapbox access token in app config. */
-export function hasMapboxToken(): boolean {
-  return readAppConfigAccessToken().length > 0;
-}
-

@@ -1,45 +1,23 @@
 {
   "expo": {
     "name": "FETCH",
-    "slug": "fetch-bukidnon",
-    "scheme": "fetchbukidnon",
+    "slug": "fetch-transport",
+    "scheme": "fetch",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "backgroundColor": "#ffffff",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.fetchbukidnon.app",
-      "buildNumber": "1",
-      "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "FETCH uses your location to set your pickup point and to show riders where you are."
-      }
+      "bundleIdentifier": "com.fetch.app"
     },
     "android": {
-      "package": "com.fetchbukidnon.app",
-      "versionCode": 1,
+      "package": "com.fetch.app",
       "edgeToEdgeEnabled": true
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store",
-      [
-        "expo-location",
-        {
-          "locationWhenInUsePermission": "FETCH uses your location to set your pickup point and to show riders where you are."
-        }
-      ],
-      "expo-font",
-      [
-        "@rnmapbox/maps",
-        {
-          "RNMapboxMapsVersion": "11.23.1"
-        }
-      ]
-    ],	"extra": {
-		"convexUrl": "https://scrupulous-sheep-213.convex.cloud",
-		"orsKey": "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjhlNGFlNTQ4NDAyZTQ1MGViZGIxYmU5ZjAwNTI3NjZhIiwiaCI6Im11cm11cjY0In0=",
-		"mapboxAccessToken": "pk.eyJ1Ijoia2xhdXNlZiIsImEiOiJjbXV3MWN2aWQwOWR4MnpteWF3Nzl5czRkIn0.4OqBbmexXNuoJkNwlPhQQQ"
-	}
+      "@maplibre/maplibre-react-native"
+    ]
   }
 }
