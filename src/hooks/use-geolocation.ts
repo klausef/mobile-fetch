@@ -156,10 +156,13 @@ const UNSUPPORTED_STATE: GeoState = {
  * Never assume permission exists: every failure mode gets an explicit state and
  * a plain-language message the UI can show.
  */
-export function useGeolocation({ watch = false }: { watch?: boolean } = {}) {
+export function useGeolocation({
+  watch = false,
+  auto = true,
+}: { watch?: boolean; auto?: boolean } = {}) {
   const [state, setState] = useState<GeoState>(
     HAS_GEOLOCATION
-      ? { status: "locating", coords: null, message: null }
+      ? { status: auto ? "locating" : "idle", coords: null, message: null }
       : UNSUPPORTED_STATE,
   );
   const watchIdRef = useRef<number | null>(null);
@@ -231,7 +234,7 @@ export function useGeolocation({ watch = false }: { watch?: boolean } = {}) {
           setState(describeError(error));
           resolve(null);
         },
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
       );
     });
   }, []);
@@ -246,9 +249,19 @@ export function useGeolocation({ watch = false }: { watch?: boolean } = {}) {
     return request();
   }, [request]);
 
+  /**
+   * Ask on mount — unless the caller opted out.
+   *
+   * `auto: false` is what the shared commuter hook uses: a prompt fired while
+   * the app is still loading is a prompt against a screen that has not asked
+   * for anything yet, and in a browser it is dismissed far more often than it
+   * is answered. The booking screens ask instead, from a tap, and a refusal
+   * there is sticky either way.
+   */
   useEffect(() => {
+    if (!auto) return;
     void request();
-  }, [request]);
+  }, [auto, request]);
 
   useEffect(() => {
     if (!watch || !HAS_GEOLOCATION) return;

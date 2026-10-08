@@ -193,14 +193,11 @@
   /* A sticky action bar (the Request button) has to park above the tab bar, not
      behind it. Sticky offsets resolve against the viewport, so the tab bar
      height and the home indicator both have to be added in. 3.5rem is the bar's
-     height in BottomTabs.tsx — the two must be changed together. */
+     height in BottomTabs.tsx — the two must be changed together.
+
+     BottomTabs is rendered at every breakpoint (AppShell has no lg split), so
+     there is no width at which the bar can sit flush with the viewport bottom. */
   .above-tabs {
     bottom: calc(3.5rem + env(safe-area-inset-bottom));
-  }
-  @media (min-width: 64rem) {
-    /* From lg up there is no tab bar, so the bar can sit flush. */
-    .above-tabs {
-      bottom: 0;
-    }
   }
 }

@@ -102,8 +102,13 @@ test("a fix in flight or in hand does not ask for a typed address", () => {
   expect(needsAddressFallback("ready")).toBe(false);
 });
 
-test("only the in-flight states are 'detecting'", () => {
-  expect(isDetecting("idle")).toBe(true);
+test("only the in-flight state is 'detecting'", () => {
+  // `idle` deliberately does not count. It is the resting state of a hook that
+  // no longer asks the browser the moment the app loads (the prompt is tied to
+  // the booking gesture instead), so an untouched screen would otherwise show
+  // "Finding you…" and arrive with its "use my location" control disabled —
+  // on a screen that has not asked for anything yet.
+  expect(isDetecting("idle")).toBe(false);
   expect(isDetecting("locating")).toBe(true);
   expect(isDetecting("ready")).toBe(false);
   for (const status of ["denied", "unavailable", "timeout", "error"] as const) {

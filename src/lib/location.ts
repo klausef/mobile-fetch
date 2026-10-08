@@ -62,9 +62,16 @@ export const CURRENT_LOCATION_ZOOM = 15;
  */
 export const CURRENT_LOCATION_COLOR = "#1d6ff2";
 
-/** True while a fix is being asked for, either at load or on a manual retry. */
+/**
+ * True while a fix is actually being asked for — a request in flight.
+ *
+ * Deliberately *not* `idle`. `idle` is the resting state of a hook that no
+ * longer asks the moment the app loads (see `useGeolocation({ auto: false })`),
+ * so counting it as "detecting" would render "Finding you…" and leave the
+ * "use my location" control born disabled on a screen that has not asked yet.
+ */
 export function isDetecting(status: LocationStatus): boolean {
-  return status === "locating" || status === "idle";
+  return status === "locating";
 }
 
 /**

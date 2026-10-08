@@ -26,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCurrentLocationContext } from "@/components/CurrentLocationProvider";
+import { useAutoDetectOnBooking } from "@/hooks/use-current-location";
 import { useOwnerAdmin } from "@/hooks/use-owner-admin";
 import { useRecentDestinations } from "@/hooks/use-recent-destinations";
 import { useReverseGeocode } from "@/hooks/use-reverse-geocode";
@@ -315,12 +316,17 @@ export default function CommuterHome() {
    */
   const surge = useQuery(api.rides.getSurge);
 
-  // One fix for the session, requested as the app opened — see
-  // `useCurrentLocation`. This screen used to run its own geolocation request,
-  // which meant the pickup here and the pickup on the location screens were two
-  // separate readings of the same person and could disagree by more than a
-  // street.
+  // One fix for the session — see `useCurrentLocation`. This screen used to run
+  // its own geolocation request, which meant the pickup here and the pickup on
+  // the location screens were two separate readings of the same person and
+  // could disagree by more than a street.
+  //
+  // The browser is asked here rather than at app load: opening the booking is
+  // the moment the answer is needed, and a prompt tied to that gesture is one
+  // the commuter can answer instead of dismissing it against a page that has
+  // not asked for anything yet.
   const here = useCurrentLocationContext();
+  useAutoDetectOnBooking(here);
   const navigate = useNavigate();
   // The service and both ends of the trip live in the URL, so this has to be
   // read before the point state below: the home hub hands a destination over
@@ -621,6 +627,28 @@ const BOOKING_RIDE_TYPE: RideType = "motorcycle";
   const recents = useRecentDestinations();
 
   /**
+   * Show what just changed after an explicit pick.
+   *
+   * On a phone the map sits above the form and a pick is made from inside the
+   * form, so the pin the commuter just chose is off-screen. Rather than let the
+   * fare appearing push the column around and leave the route invisible, ease a
+   * phone up to the map. From sm up the map is already beside or above the pick
+   * in the same viewport, so nothing needs to move. `nearest` scrolls as little
+   * as possible — this nudges, it does not yank.
+   */
+  const scrollMapIntoViewOnMobile = useCallback(() => {
+    if (typeof window === "undefined" || window.innerWidth >= 640) return;
+    setTimeout(
+      () =>
+        mapWrapRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+        }),
+      80,
+    );
+  }, []);
+
+  /**
    * A destination chosen by typing or tapping a recent.
    *
    * Both go through `applyPlace`, so a search result and a dragged pin end up
@@ -631,8 +659,9 @@ const BOOKING_RIDE_TYPE: RideType = "motorcycle";
     (point: LatLng, label: string) => {
       applyPlace("destination", point, label);
       recents.remember({ label, lat: point.lat, lng: point.lng });
+      scrollMapIntoViewOnMobile();
     },
-    [applyPlace, recents],
+    [applyPlace, recents, scrollMapIntoViewOnMobile],
   );
 
 /**
@@ -1065,15 +1094,17 @@ const BOOKING_RIDE_TYPE: RideType = "motorcycle";
       });
     }
   } else {
-    // Where the commuter is, as the blue dot — and only when it is not already
-    // standing in for the pickup. A GPS-seeded pickup *is* the fix, so drawing
-    // both would put two pins on one point; once the pickup has been nudged to
-    // the gate they have separated, and then the blue dot is exactly the thing
-    // that shows how far the rider will have to walk from the pin.
-    if (
-      here.coords &&
-      !isSamePlace({ lat: here.coords.lat, lng: here.coords.lng }, pickup)
-    ) {
+    // Where the commuter is, as the blue dot — drawn whenever a fix exists,
+    // including under the pickup pin.
+    //
+    // It used to stand down whenever the pin sat on the fix ("two dots on one
+    // point"), which meant the ordinary case — pickup seeded from GPS — never
+    // showed it at all, and a commuter had no way to tell "the map found me"
+    // from "the map is parked on the city default". The pin answers "where will
+    // the rider be picked up"; the dot answers "where am I", and those are
+    // different questions even when the answers are the same place. Pushed
+    // first, so the pin renders on top and the halo reads around it.
+    if (here.coords) {
       markers.push({
         id: "here",
         lat: here.coords.lat,
@@ -1866,13 +1897,14 @@ const BOOKING_RIDE_TYPE: RideType = "motorcycle";
                         >
                           <button
                             type="button"
-                            onClick={() =>
+                            onClick={() => {
                               applyPlace(
                                 target,
                                 place,
                                 place.address ?? place.label,
-                              )
-                            }
+                              );
+                              scrollMapIntoViewOnMobile();
+                            }}
                             className="flex min-w-0 flex-1 items-center gap-3 text-left"
                           >
                             <span className="text-muted-foreground">

@@ -10,14 +10,16 @@
  * can then disagree. One request, one answer, one address, for the whole
  * session.
  *
- * ── Why the request fires at load ───────────────────────────────────────────
+ * ── Why the request fires when the booking starts ───────────────────────────
  * A commuter who has to find a crosshair before the app will tell them where
- * they are is doing three taps before anything useful appears. Asking as the
- * app opens means the pickup is already filled and the map is already centred
- * by the time they look at it. The cost is a permission prompt on a screen
- * that has not yet asked for anything — which is why this is a browser
- * permission, the same one any map app asks for, rather than an account-level
- * switch buried in settings.
+ * they are is doing three taps before anything useful appears — so the request
+ * is not deferred forever, only past the point where it can be *answered*. The
+ * app no longer asks while it is still loading: a prompt against a page that
+ * has not asked for anything is dismissed far more often than it is answered,
+ * and in a browser a refusal is sticky. `useAutoDetectOnBooking` asks the
+ * moment the commuter opens a booking screen, which is a gesture the prompt can
+ * be tied to, and a fix that times out on a cold GPS gets a second attempt
+ * there rather than never.
  *
  * ── Why the address is resolved once, here ──────────────────────────────────
  * Reverse geocoding is a network request. Both the pickup screen and the
@@ -28,9 +30,10 @@
  * named.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { describePoint, type LatLng } from "@/lib/map-service";
 import {
+  canRetry,
   isDetecting,
   locationNotice,
   needsAddressFallback,
@@ -52,7 +55,7 @@ export interface CurrentLocation {
   address: string | null;
   /** True while a fix exists but its address has not come back yet. */
   resolvingAddress: boolean;
-  /** True while a fix is being asked for — the load-time request or a retry. */
+  /** True while a fix is actually being asked for — a request in flight. */
   detecting: boolean;
   /**
    * True when GPS cannot be relied on and the screen should offer a typed
@@ -132,8 +135,8 @@ function resolveAddress(point: LatLng): Promise<string | null> {
  * it is about the *answer* being stable while the commuter moves between
  * screens that display it.
  */
-export function useCurrentLocation(): CurrentLocation {
-  const geo = useGeolocation();
+export function useCurrentLocation({ auto }: { auto?: boolean } = {}): CurrentLocation {
+  const geo = useGeolocation({ auto });
   /**
    * The last resolved address, tagged with the point it belongs to.
    *
@@ -188,4 +191,40 @@ export function useCurrentLocation(): CurrentLocation {
     blockedByEnvironment: geo.blockedByEnvironment,
     refresh: geo.locate,
   };
+}
+
+/**
+ * How many fixes a booking screen asks for on its own before leaving it to the
+ * retry card. Two: one for the common case, one more for a cold GPS that
+ * answers `timeout` on the first go — which is exactly the failure that used to
+ * leave the map parked on the city default for the whole session.
+ */
+const AUTO_DETECT_ATTEMPTS = 2;
+
+/**
+ * Ask for a fix the moment a booking screen opens.
+ *
+ * This is where the permission prompt belongs. The hook no longer asks when
+ * the app loads, so without this the app would sit in `idle` until somebody
+ * found the crosshair button — and a booking with no pickup is the one moment
+ * the answer is actually needed.
+ *
+ * Guarded four ways so it can never loop or nag:
+ *  - a fix already exists → nothing to ask for;
+ *  - a request is already in flight → one at a time;
+ *  - the browser has refused → asking again cannot succeed, and the screen
+ *    shows the "turn it back on in site settings" card instead;
+ *  - `AUTO_DETECT_ATTEMPTS` reached → the manual retry card takes over.
+ */
+export function useAutoDetectOnBooking(here: CurrentLocation): void {
+  const attempts = useRef(0);
+  const { status, coords, refresh } = here;
+  useEffect(() => {
+    if (coords !== null) return;
+    if (status === "locating") return;
+    if (!canRetry(status)) return;
+    if (attempts.current >= AUTO_DETECT_ATTEMPTS) return;
+    attempts.current += 1;
+    void refresh();
+  }, [coords, status, refresh]);
 }

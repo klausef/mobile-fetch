@@ -35,9 +35,20 @@ deployment in `src/lib/convex.ts`, and move `VITE_CONVEX_URL` and
 `CONVEX_DEPLOYMENT` with it so `convex dev` pushes functions to the same backend
 the client talks to.
 
-The convex server has a separate set of environment variables that are accessible by the convex backend.
+The convex server has a separate set of environment variables, set on the
+deployment with `npx convex env set NAME value` rather than in any file here.
+They are documented in `.env.example`.
 
-Currently, these variables include auth-specific keys: JWKS, JWT_PRIVATE_KEY, and SITE_URL.
+Auth needs no key of its own: sign-in tokens are self-issued by Convex and
+validated against `${CONVEX_SITE_URL}/.well-known/openid-configuration`
+(`auth.config.ts:22`), and `CONVEX_SITE_URL` itself is auto-provided by the
+deployment — it is never set by hand. The freebuff federated path validates
+against freebuff's published JWKS endpoint rather than a key held here, so
+there is no `JWKS` or `JWT_PRIVATE_KEY` anywhere in the backend. The variables
+the backend *does* read are `VLY_CONVEX_AUTH_ISSUER` (federated issuer,
+defaults to `https://freebuff.com`), `VLY_INTEGRATION_BASE_URL` and
+`VLY_INTEGRATION_KEY` (the email One-Time-Pin gateway), and the STRIPE trio
+required before online payment is offered.
 
 ## Maps and routing
 
