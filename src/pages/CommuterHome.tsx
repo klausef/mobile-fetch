@@ -1236,8 +1236,7 @@ const BOOKING_RIDE_TYPE: RideType = "motorcycle";
             The refresh button lives inside this card rather than on the map,
             because this is the state where a person is actually worried about
             their location; buried under a crosshair it would go unread.
-        */}
-          {here.notice ? (
+        */}              {here.notice ? (
             <div className="mb-3 rounded-lg border border-border bg-card px-3.5 py-3">
               <div className="flex gap-3">
                 <AlertCircle className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
@@ -1245,11 +1244,6 @@ const BOOKING_RIDE_TYPE: RideType = "motorcycle";
                   <p className="text-xs leading-5 text-muted-foreground">
                     {here.notice}
                   </p>
-                  {here.blockedByEnvironment ? (
-                    <p className="text-xs leading-5 text-muted-foreground">
-                      {here.blockedByEnvironment}
-                    </p>
-                  ) : null}
                   {canRetry(here.status) ? (
                     <Button
                       type="button"
@@ -1262,7 +1256,7 @@ const BOOKING_RIDE_TYPE: RideType = "motorcycle";
                       {here.detecting ? (
                         <Loader2 className="size-3.5 animate-spin" />
                       ) : (
-                        <Crosshair className="size-3.5" />
+<Crosshair className="size-3.5" />
                       )}
                       Try again
                     </Button>
