@@ -2,7 +2,7 @@
  * The phone's Mapbox build.
  *
  * `@rnmapbox/maps` is a Kotlin/Swift bridge written against one version of
- * Mapbox's native map SDK, and `mobile/app.json` pins that version explicitly
+ * Mapbox's native map SDK, and `frontend/app.json` pins that version explicitly
  * for the Android and iOS projects Expo generates. The library's own install
  * guide is blunt about the mistake that is easy to make here and hard to see:
  * pinning an *earlier* version than the library expects "will likely result in
@@ -18,7 +18,7 @@
  * without it renders an empty rectangle rather than an error. `MapboxMap` has
  * to say which of the two it is looking at.
  *
- * The two number-reading tests skip when `mobile/node_modules` is not
+ * The two number-reading tests skip when `frontend/node_modules` is not
  * installed, so `bun test` still runs from a root-only install; when the
  * library is present they assert at full strength.
  *
@@ -27,7 +27,7 @@
 import { test, expect, describe } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 
-const appJson = JSON.parse(readFileSync("mobile/app.json", "utf8")) as {
+const appJson = JSON.parse(readFileSync("frontend/app.json", "utf8")) as {
   expo?: {
     plugins?: unknown[];
     extra?: { mapboxAccessToken?: string };
@@ -47,7 +47,7 @@ const pluginOptions = (() => {
 const pinned = pluginOptions?.RNMapboxMapsVersion ?? "";
 
 /** The version the installed library is written against, from its manifest. */
-const libraryManifest = "mobile/node_modules/@rnmapbox/maps/package.json";
+const libraryManifest = "frontend/node_modules/@rnmapbox/maps/package.json";
 const installed = existsSync(libraryManifest);
 const expected = installed
   ? ((JSON.parse(readFileSync(libraryManifest, "utf8")) as {
@@ -87,14 +87,14 @@ describe("the phone pins a Mapbox native SDK it can build against", () => {
     },
   );
 
-  test.skipIf(!existsSync("mobile/android/gradle.properties"))(
+  test.skipIf(!existsSync("frontend/android/gradle.properties"))(
     "the generated Android project agrees with it",
     () => {
       // `expo prebuild` without `--clean` rewrites this property only when the
       // plugin is given a version, so a build can otherwise keep using the pin
       // that was there before — which is exactly how a fixed `app.json` still
       // produces a Mapbox surface that does not draw.
-      const gradle = readFileSync("mobile/android/gradle.properties", "utf8");
+      const gradle = readFileSync("frontend/android/gradle.properties", "utf8");
       const line = /^expoRNMapboxMapsVersion=(.*)$/m.exec(gradle)?.[1]?.trim();
       expect(line).toBe(pinned);
     },
@@ -102,7 +102,7 @@ describe("the phone pins a Mapbox native SDK it can build against", () => {
 });
 
 describe("a build with no Mapbox token says so", () => {
-  const source = readFileSync("mobile/lib/mapbox-components.tsx", "utf8");
+  const source = readFileSync("frontend/src/components/MapView.tsx", "utf8");
 
   test("the map surface carries a public token to draw with", () => {
     // A `pk.` token, not an `sk.` one: the secret token is a server credential

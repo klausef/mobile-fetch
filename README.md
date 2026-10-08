@@ -17,6 +17,22 @@ All relevant files live in the 'src' directory.
 
 Use bun for the package manager.
 
+## Repository layout
+
+- `src/` — the web app: pages, components, `src/lib` (the pure core the other
+  clients reuse) and `src/convex/`, which is the backend and the database.
+- `frontend/` — the React Native (Expo) app: `app/` is the route tree, `src/`
+  holds components, services (`api/`, `maps/`), hooks, store, theme and utils.
+  See `frontend/README.md`.
+- `tests/` — one suite over the web app, the shared core, and the phone app's
+  pure helpers.
+- `android/` — the Capacitor shell around the built web app.
+
+The web app and `src/convex/` have to stay at the root: the platform serves the
+browser build from here, and one Convex deployment is what both clients read. So
+the `backend/` half of a `frontend/` + `backend/` split *is* `src/convex/` here,
+rather than a second service to keep in step with it.
+
 ## Setup
 
 This project is set up already and running on a cloud environment, as well as a convex development in the sandbox.

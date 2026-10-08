@@ -21,7 +21,7 @@ import {
   straightLine,
   drivingRoute,
   type RouteCoordinate,
-} from "../mobile/lib/mapbox-route";
+} from "../frontend/src/services/maps/route-geometry";
 
 test("straightLine returns GeoJSON-ordered coordinate pairs", () => {
   const from = { lat: 8.1550421, lng: 125.1305726 };
