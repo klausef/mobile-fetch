@@ -246,7 +246,10 @@ expect(page).toContain("<PlaceSearch");
     // scrolls was attached but never read, so it went nowhere.
     expect(page).toContain("Choose on map");
     expect(page).toContain("mapWrapRef.current?.scrollIntoView");
-    expect(page.match(/mapWrapRef/g)).toHaveLength(3);
+    // The ref is read twice now: by the button, and by the pick handler that
+    // eases a phone up to the pin it just chose. The exact count keeps the
+    // assert honest about both readers.
+    expect(page.match(/mapWrapRef/g)).toHaveLength(4);
   });
 });
 

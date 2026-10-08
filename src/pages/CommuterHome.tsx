@@ -627,6 +627,28 @@ const BOOKING_RIDE_TYPE: RideType = "motorcycle";
   const recents = useRecentDestinations();
 
   /**
+   * Show what just changed after an explicit pick.
+   *
+   * On a phone the map sits above the form and a pick is made from inside the
+   * form, so the pin the commuter just chose is off-screen. Rather than let the
+   * fare appearing push the column around and leave the route invisible, ease a
+   * phone up to the map. From sm up the map is already beside or above the pick
+   * in the same viewport, so nothing needs to move. `nearest` scrolls as little
+   * as possible — this nudges, it does not yank.
+   */
+  const scrollMapIntoViewOnMobile = useCallback(() => {
+    if (typeof window === "undefined" || window.innerWidth >= 640) return;
+    setTimeout(
+      () =>
+        mapWrapRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+        }),
+      80,
+    );
+  }, []);
+
+  /**
    * A destination chosen by typing or tapping a recent.
    *
    * Both go through `applyPlace`, so a search result and a dragged pin end up
@@ -637,8 +659,9 @@ const BOOKING_RIDE_TYPE: RideType = "motorcycle";
     (point: LatLng, label: string) => {
       applyPlace("destination", point, label);
       recents.remember({ label, lat: point.lat, lng: point.lng });
+      scrollMapIntoViewOnMobile();
     },
-    [applyPlace, recents],
+    [applyPlace, recents, scrollMapIntoViewOnMobile],
   );
 
 /**
@@ -1874,13 +1897,14 @@ const BOOKING_RIDE_TYPE: RideType = "motorcycle";
                         >
                           <button
                             type="button"
-                            onClick={() =>
+                            onClick={() => {
                               applyPlace(
                                 target,
                                 place,
                                 place.address ?? place.label,
-                              )
-                            }
+                              );
+                              scrollMapIntoViewOnMobile();
+                            }}
                             className="flex min-w-0 flex-1 items-center gap-3 text-left"
                           >
                             <span className="text-muted-foreground">

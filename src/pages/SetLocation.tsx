@@ -668,7 +668,7 @@ export default function SetLocation({ step }: { step: LocationStep }) {
         ) : null}
       </div>
 
-      <div className="safe-bottom relative z-10 rounded-t-3xl bg-background px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-5 shadow-[0_-10px_30px_-14px_rgba(0,0,0,0.35)]">
+      <div className="safe-bottom relative z-10 max-h-[75dvh] overflow-y-auto overscroll-contain rounded-t-3xl bg-background px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-5 shadow-[0_-10px_30px_-14px_rgba(0,0,0,0.35)]">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs font-medium tracking-tight text-fetch-red">
