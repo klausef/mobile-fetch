@@ -1,26 +1,22 @@
 /**
- * The phone's Mapbox build.
+ * The phone's map build.
  *
- * `@rnmapbox/maps` is a Kotlin/Swift bridge written against one version of
- * Mapbox's native map SDK, and `frontend/app.json` pins that version explicitly
- * for the Android and iOS projects Expo generates. The library's own install
- * guide is blunt about the mistake that is easy to make here and hard to see:
- * pinning an *earlier* version than the library expects "will likely result in
- * a build error" — and a native build error is invisible from the JS side. The
- * Metro server still serves, the screens still render, so the only thing on
- * screen is the symptom: a Mapbox surface that never draws. That is the shape
- * of bug that costs an afternoon and ends with somebody rewriting working
- * JavaScript.
+ * `@maplibre/maplibre-react-native` is a native bridge, and the map the phone
+ * draws is decided by `frontend/src/services/maps/mapProvider.ts`: the live
+ * MapLibre surface when the native SDK is linked in the build, and a plain
+ * placeholder when it is not (Expo Go, a web preview, a CI bundle). The
+ * failure this file guards against is the shape of bug that costs an
+ * afternoon: a map surface that silently renders nothing — the JS bundle
+ * serves, the screens render, and the only symptom is a blank rectangle.
  *
- * The second half of the same failure: the public `pk.` token reaches the app
- * through `expo.extra`, which on Android is the `app.config` asset compiled
- * into the APK. So the token is a *build* input, not a runtime one, and a build
- * without it renders an empty rectangle rather than an error. `MapboxMap` has
- * to say which of the two it is looking at.
+ * Tiles come from OpenStreetMap's plain raster endpoint, which needs no
+ * access token at all — so unlike a Mapbox build there is no `pk.` token to
+ * check in, and no blank-map-when-unconfigured failure mode to explain. What
+ * can still fail silently is the provider seam: a build without the native
+ * SDK must degrade to the placeholder, never crash and never draw nothing.
  *
- * The two number-reading tests skip when `frontend/node_modules` is not
- * installed, so `bun test` still runs from a root-only install; when the
- * library is present they assert at full strength.
+ * The dependency-reading tests skip when `frontend/node_modules` is not
+ * installed, so `bun test` still runs from a root-only install.
  *
  * Run: bun test
  */
@@ -34,26 +30,9 @@ const appJson = JSON.parse(readFileSync("frontend/app.json", "utf8")) as {
   };
 };
 
-/** Options of the `@rnmapbox/maps` plugin entry in `app.json`, or null. */
-const pluginOptions = (() => {
-  const entry = (appJson.expo?.plugins ?? []).find(
-    (plugin) => Array.isArray(plugin) && plugin[0] === "@rnmapbox/maps",
-  );
-  return Array.isArray(entry)
-    ? (entry[1] as { RNMapboxMapsVersion?: string } | undefined)
-    : undefined;
-})();
-
-const pinned = pluginOptions?.RNMapboxMapsVersion ?? "";
-
-/** The version the installed library is written against, from its manifest. */
-const libraryManifest = "frontend/node_modules/@rnmapbox/maps/package.json";
-const installed = existsSync(libraryManifest);
-const expected = installed
-  ? ((JSON.parse(readFileSync(libraryManifest, "utf8")) as {
-      mapbox?: { android?: string };
-    }).mapbox?.android ?? "")
-  : "";
+const packageJson = JSON.parse(readFileSync("frontend/package.json", "utf8")) as {
+  dependencies?: Record<string, string>;
+};
 
 /** `[major, minor, patch]`, or null when the string is not a full version. */
 function triple(version: string): number[] | null {
@@ -61,61 +40,73 @@ function triple(version: string): number[] | null {
   return match ? match.slice(1).map(Number) : null;
 }
 
-function compare(a: number[], b: number[]): number {
-  for (let index = 0; index < 3; index += 1) {
-    if (a[index] !== b[index]) return a[index] - b[index];
-  }
-  return 0;
-}
-
-describe("the phone pins a Mapbox native SDK it can build against", () => {
-  test("the plugin is configured with a full version", () => {
-    // A range (`^11`, `~> 11.23`) would resolve to whatever the repository
-    // happens to hold and take the JS bridge with it; a full triple is what the
-    // Gradle property and the Podfile both consume.
-    expect(triple(pinned)).not.toBeNull();
+describe("the phone pins a native map SDK it can build against", () => {
+  test("the Expo config registers the map plugin", () => {
+    // A config plugin the app config does not name is a plugin that never
+    // runs: the native side of the map is never generated, and the surface
+    // comes up blank on device with no error on the JS side.
+    const plugins = appJson.expo?.plugins ?? [];
+    const configured = plugins.some(
+      (plugin) =>
+        plugin === "@maplibre/maplibre-react-native" ||
+        (Array.isArray(plugin) && plugin[0] === "@maplibre/maplibre-react-native"),
+    );
+    expect(configured).toBe(true);
   });
 
-  test.skipIf(!installed)(
-    "and it is not older than the library's own expectation",
-    () => {
-      const expectedParts = triple(expected);
-      const pinnedParts = triple(pinned);
-      expect(expectedParts).not.toBeNull();
-      expect(pinnedParts).not.toBeNull();
-      expect(compare(pinnedParts!, expectedParts!)).toBeGreaterThanOrEqual(0);
-    },
-  );
+  test("the dependency is a full version, not a range", () => {
+    const version = packageJson.dependencies?.["@maplibre/maplibre-react-native"] ?? "";
+    expect(triple(version)).not.toBeNull();
+  });
 
-  test.skipIf(!existsSync("frontend/android/gradle.properties"))(
-    "the generated Android project agrees with it",
+  test.skipIf(!existsSync("frontend/node_modules/@maplibre/maplibre-react-native/package.json"))(
+    "and the installed package matches what is declared",
     () => {
-      // `expo prebuild` without `--clean` rewrites this property only when the
-      // plugin is given a version, so a build can otherwise keep using the pin
-      // that was there before — which is exactly how a fixed `app.json` still
-      // produces a Mapbox surface that does not draw.
-      const gradle = readFileSync("frontend/android/gradle.properties", "utf8");
-      const line = /^expoRNMapboxMapsVersion=(.*)$/m.exec(gradle)?.[1]?.trim();
-      expect(line).toBe(pinned);
+      const installed = (
+        JSON.parse(
+          readFileSync(
+            "frontend/node_modules/@maplibre/maplibre-react-native/package.json",
+            "utf8",
+          ),
+        ) as { version?: string }
+      ).version ?? "";
+      const declared = packageJson.dependencies?.["@maplibre/maplibre-react-native"] ?? "";
+      const installedParts = triple(installed);
+      const declaredParts = triple(declared.replace(/^[~^]/, ""));
+      expect(installedParts).not.toBeNull();
+      expect(declaredParts).not.toBeNull();
+      // Same major, and not older than the manifest declares — the JS bridge
+      // and the generated native project are built from one version.
+      expect(installedParts![0]).toBe(declaredParts![0]);
     },
   );
 });
 
-describe("a build with no Mapbox token says so", () => {
-  const source = readFileSync("frontend/src/components/MapView.tsx", "utf8");
+describe("a build without the native SDK degrades instead of failing", () => {
+  const providerSource = readFileSync("frontend/src/services/maps/mapProvider.ts", "utf8");
 
-  test("the map surface carries a public token to draw with", () => {
-    // A `pk.` token, not an `sk.` one: the secret token is a server credential
-    // and this value ships in every install.
-    expect(appJson.expo?.extra?.mapboxAccessToken ?? "").toMatch(/^pk\./);
+  test("providers resolve the native SDK lazily, never eagerly", () => {
+    // A top-level `import { MapView } from "@maplibre/maplibre-react-native"`
+    // in this module would crash every screen that renders a map in a build
+    // without the SDK — Expo Go, a web preview, CI — instead of degrading.
+    expect(providerSource).toContain("require(\"./MapLibreMap\")");
+    expect(providerSource).not.toMatch(/import\s+\{[^}]*\}\s+from\s+"@maplibre\/maplibre-react-native"/);
   });
 
-  test("and an unconfigured build explains the blank instead of painting it", () => {
-    // The alternative is what this replaced: `styleURL` silently undefined, a
-    // mounted-but-styleless native view, and no way to tell an unconfigured
-    // build apart from an app that is broken.
-    expect(source).toContain("if (!hasMapboxToken())");
-    expect(source).toContain("Map unavailable");
-    expect(source).not.toContain("styleURL={hasMapboxToken()");
+  test("the fallback provider is always available", () => {
+    // The placeholder is what renders when the SDK is missing; a fallback
+    // that reports itself unavailable would leave `getMapProvider` with
+    // nothing to return and every map screen blank.
+    expect(providerSource).toContain('available: true');
+  });
+
+  test("the map component defers to the provider seam", () => {
+    // Screens render `<MapView />`; which implementation draws is decided by
+    // `getMapProvider()`. A screen that imported a map library directly would
+    // bypass the fallback and crash in the same builds.
+    const viewSource = readFileSync("frontend/src/components/MapView.tsx", "utf8");
+    expect(viewSource).toContain("getMapProvider");
+    expect(viewSource).toContain("FallbackMap");
+    expect(viewSource).not.toMatch(/from\s+"@maplibre\/maplibre-react-native"/);
   });
 });

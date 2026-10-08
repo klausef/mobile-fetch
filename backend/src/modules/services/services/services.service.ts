@@ -1,4 +1,4 @@
-import { db } from "../../database/db";
+import { db } from "../../../database/db";
 import type { Service } from "../types";
 
 export function listServices() {

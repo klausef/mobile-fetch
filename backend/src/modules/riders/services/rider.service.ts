@@ -1,5 +1,6 @@
-import { db } from "../../database/db";
-import type { Rider, EarningsSummary, Booking } from "../types";
+import { db } from "../../../database/db";
+import type { Rider } from "../types";
+import type { EarningsSummary, Booking } from "../../bookings/types";
 
 export function getRider(id: string): Rider | undefined {
   return db.getRider(id);

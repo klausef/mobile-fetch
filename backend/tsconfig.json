@@ -5,6 +5,7 @@
     "moduleResolution": "bundler",
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "types": ["bun-types"],
     "strict": true,
     "noEmit": true,
     "outDir": "dist",

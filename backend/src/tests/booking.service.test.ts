@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { canTransition } from "../src/modules/bookings/services/booking.service";
+import { canTransition } from "../modules/bookings/services/booking.service";
 
 describe("the booking status machine", () => {
   test("canTransition", () => {

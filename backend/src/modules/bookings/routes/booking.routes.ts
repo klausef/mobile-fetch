@@ -10,18 +10,6 @@ import {
   getMyTrips,
   getEarnings,
 } from "../services/booking.service";
-import { Router } from "express";
-import {
-  getMyBookings,
-  getBooking,
-  createBooking,
-  cancelBooking,
-  getAvailableRequests,
-  acceptBooking,
-  updateBookingStatus,
-  getMyTrips,
-  getEarnings,
-} from "../services/booking.service";
 import type { Booking, BookingStatus } from "../types";
 
 const bookings = Router();
@@ -41,11 +29,10 @@ bookings.get("/passenger/bookings/:id", (req, res) => {
 
 bookings.post("/passenger/bookings", (req, res) => {
   const data = req.body ?? {};
-  const booking = createBooking(data as Booking).catch((err) => {
-    return res.status(400).json({ error: String(err) });
-  });
-  if (!booking) return;
-  return res.status(201).json(booking);
+  createBooking(data).then(
+    (booking) => res.status(201).json(booking),
+    (err: unknown) => res.status(400).json({ error: String(err) }),
+  );
 });
 
 bookings.post("/passenger/bookings/:id/cancel", (req, res) => {
@@ -70,12 +57,10 @@ bookings.post("/rider/bookings/:id/accept", (req, res) => {
   const riderId = req.body.riderId as string;
   const riderName = req.body.riderName as string;
   if (!riderId || !riderName) return res.status(400).json({ error: "riderId and riderName required" });
-  try {
-    const booking = acceptBooking(req.params.id, riderId, riderName);
-    return res.json(booking);
-  } catch (err: unknown) {
-    return res.status(400).json({ error: String(err) });
-  }
+  acceptBooking(req.params.id, riderId, riderName).then(
+    (booking) => res.json(booking),
+    (err: unknown) => res.status(400).json({ error: String(err) }),
+  );
 });
 
 bookings.post("/rider/bookings/:id/status", (req, res) => {

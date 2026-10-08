@@ -1,4 +1,4 @@
-import { db } from "../../database/db";
+import { db } from "../../../database/db";
 import type { Passenger, CreatePassengerInput } from "../types";
 
 export function getPassenger(id: string): Passenger | undefined {

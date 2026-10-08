@@ -48,16 +48,20 @@ export const BOOKING_STATUS_ORDER: BookingStatus[] = [
 export const PASSENGER_CANCELLABLE: BookingStatus[] = ["pending", "accepted", "driver_arriving"];
 
 export const RIDER_NEXT_STATUS: Record<BookingStatus, BookingStatus | null> = {
+  pending: "accepted",
   accepted: "driver_arriving",
   driver_arriving: "in_progress",
   in_progress: "completed",
   completed: null,
   cancelled: null,
-  pending: null,
 };
 
 export const canTransition = (from: BookingStatus, to: BookingStatus): boolean => {
-  if (to === "cancelled") return PASSENGER_CANCELLABLE.includes(from);
+  // Cancellation is the riders' escape hatch from any live stage — the
+  // passenger's own narrower rule is `PASSENGER_CANCELLABLE`, which stops a
+  // cancellation once the trip has started. A terminal stage (completed,
+  // cancelled) accepts nothing at all.
+  if (to === "cancelled") return from !== "completed" && from !== "cancelled";
   const next = RIDER_NEXT_STATUS[from] ?? (null as BookingStatus | null);
   return next === to;
 };

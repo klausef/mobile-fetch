@@ -1,4 +1,4 @@
-import { db } from "../../database/db";
+import { db } from "../../../database/db";
 import {
   BOOKING_STATUS_ORDER,
   PASSENGER_CANCELLABLE,
@@ -9,6 +9,11 @@ import {
   type Booking,
   type BookingStatus,
 } from "../types";
+
+// Re-exported so callers (and the tests) can import the status machine's
+// predicate from the service module that drives it, rather than reaching into
+// the types file.
+export { canTransition };
 
 export function getMyBookings(passengerId: string): Booking[] {
   const bookings = db.myBookings(passengerId);
