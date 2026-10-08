@@ -2,7 +2,11 @@ import {
   useCurrentLocation,
   type CurrentLocation,
 } from "@/hooks/use-current-location";
-import { createContext, useContext, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  type ReactNode,
+} from "react";
 
 /**
  * The one current-location fix, shared by every screen.

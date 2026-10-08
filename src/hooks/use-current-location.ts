@@ -42,8 +42,12 @@ import {
 import {
   useGeolocation,
   type GeoCoords,
-  type GeoPermission,
 } from "./use-geolocation";
+type GeoPermission =
+  | "granted"
+  | "denied"
+  | "prompt"
+  | "unknown";
 
 /** A fix plus the best name we have for it. */
 export interface CurrentLocation {
@@ -186,7 +190,10 @@ export function useCurrentLocation({ auto }: { auto?: boolean } = {}): CurrentLo
     resolvingAddress: coords !== null && !settled,
     detecting,
     needsFallback: fallback,
-    notice: locationNotice(geo.status, geo.permission === "prompt"),
+    notice: locationNotice(
+      geo.status,
+      geo.permission === "prompt",
+    ),
     permission: geo.permission,
     blockedByEnvironment: geo.blockedByEnvironment,
     refresh: geo.locate,

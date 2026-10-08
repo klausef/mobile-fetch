@@ -16,6 +16,8 @@
  */
 
 import { haversineKm } from "./geo";
+
+export { geoPermission } from "./geo";
 import type { LatLng } from "./map-service";
 
 /**

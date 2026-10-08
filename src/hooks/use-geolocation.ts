@@ -73,6 +73,7 @@ export interface GeoState {
   message: string | null;
 }
 
+const USE_GEOLOCATION_PERMISSION_ENABLED = false;
 const PERMISSION_MESSAGE =
   "Location access is required to request or track a ride.";
 
@@ -80,6 +81,7 @@ const HAS_GEOLOCATION =
   typeof navigator !== "undefined" && navigator.geolocation != null;
 
 /** Live permission state, as reported by the browser itself. */
+
 export type GeoPermission = "granted" | "denied" | "prompt" | "unknown";
 
 /**
@@ -165,10 +167,19 @@ export function useGeolocation({
       ? { status: auto ? "locating" : "idle", coords: null, message: null }
       : UNSUPPORTED_STATE,
   );
-  const watchIdRef = useRef<number | null>(null);
-  const [permission, setPermission] = useState<GeoPermission>("unknown");
+  const watchIdRef = useRef<number | null>(null);  const [permission, setPermission] = useState<GeoPermission>("unknown");
+  if (!USE_GEOLOCATION_PERMISSION_ENABLED) {
+    return {
+      ...state,
+      locate,
+      permission,
+      blockedByEnvironment: environmentHint(),
+    };
+  }
 
-  /**
+
+
+
    * Ask the browser what it currently thinks about this origin.
    *
    * A refusal is *sticky*: once someone clicks Block, accepting again does
@@ -293,12 +304,7 @@ export function useGeolocation({
   return {
     ...state,
     locate,
-    /** What the browser says about this origin right now. */
     permission,
-    /**
-     * True when location cannot work here for environmental reasons, so the UI
-     * can say so up front rather than waiting for a silent failure.
-     */
     blockedByEnvironment: environmentHint(),
   };
 }

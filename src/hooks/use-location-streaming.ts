@@ -1,5 +1,6 @@
 import { api } from "@/convex/_generated/api";
-import { useGeolocation } from "@/hooks/use-geolocation";
+import { geoPermission } from "@/lib/geo";
+import type { GeoState, useGeolocation } from "@/hooks/use-geolocation";
 import { useMutation } from "convex/react";
 import { useEffect, useRef } from "react";
 
@@ -30,7 +31,7 @@ const STREAM_INTERVAL_MS = 2000;
 export function useLocationStreaming(isOnline: boolean) {
   const updateLocation = useMutation(api.riders.updateLocation);
   const geo = useGeolocation({ watch: true });
-  const coordsRef = useRef(geo.coords);
+  const coordsRef = useRef<GeoState["coords"]>(geo.coords);
 
   useEffect(() => {
     coordsRef.current = geo.coords;
@@ -48,7 +49,7 @@ export function useLocationStreaming(isOnline: boolean) {
         // bearing alone, so a rider driving through a tunnel keeps pointing the
         // way they were pointing rather than snapping to north.
         ...(coords.heading != null ? { heading: coords.heading } : {}),
-      }).catch(() => {
+      } as Parameters<typeof updateLocation>[0]).catch(() => {
         /* transient network errors are retried on the next tick */
       });
     };
