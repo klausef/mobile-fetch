@@ -1,6 +1,7 @@
 import { AccountMenu } from "@/components/AccountMenu";
 import { BottomTabs } from "@/components/BottomTabs";
 import { FetchBrand } from "@/components/FetchBrand";
+import { ProfileNavigationRail } from "@/components/ProfileNavigationRail";
 import {
   Popover,
   PopoverContent,
@@ -17,7 +18,6 @@ import { useMutation, useQuery } from "convex/react";
 import { formatDistanceToNow } from "date-fns";
 import { Bell } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { ProfileNavigationRail } from "@/components/ProfileNavigationRail";
 import { NavLink } from "react-router";
 
 function NavItem({ to, children }: { to: string; children: ReactNode }) {
@@ -161,22 +161,30 @@ export function AppShell({
         </div>
       </header>
 
-      <main className="safe-bottom-offset mx-auto w-full max-w-7xl flex-1 p-4 sm:p-6">
-        {children}
-      </main>
+      <div className="mx-auto flex w-full max-w-7xl flex-1 items-start">
+        <main className="safe-bottom-offset min-w-0 flex-1 p-4 sm:p-6">
+          {children}
+        </main>
 
-      {/* Private workspace navigation, for signed-in accounts that want a
-          persistent rail instead of the mobile bottom tabs. It is a sidebar
-          because the authenticated app is at home on a desktop monitor, and
-          the same routes still live in the top header for everyone else. */}
-      {profile && (
-        <nav
-          className="hidden shrink-0 lg:flex lg:flex-col"
-          aria-label="Workspace navigation"
-        >
-          <ProfileNavigationRail currentPath={typeof window !== "undefined" ? window.location.pathname : "/"} />
-        </nav>
-      )}
+        {/*
+          A desktop rail, and only a desktop rail.
+
+          The bottom bar is the phone's navigation: it is fixed to the thumb's
+          reach, and on a monitor it is a strip of chrome at the bottom of a
+          window that already has room to keep the same destinations in view.
+          Signed-in only, because a signed-out visitor has no account
+          destinations to show, and hidden below `lg` so nothing changes on the
+          screens the phone already gets right.
+        */}
+        {profile ? (
+          <aside
+            aria-label="Sections"
+            className="safe-bottom-offset sticky top-16 hidden w-56 shrink-0 py-6 pr-2 lg:block"
+          >
+            <ProfileNavigationRail role={profile.role} isAdmin={isAdmin} />
+          </aside>
+        ) : null}
+      </div>
 
       <BottomTabs
         tabs={bottomTabs}

@@ -1,151 +1,98 @@
-import { Check, ClipboardList, MessageCircle, Shield, User } from "lucide-react";
-import { useLocation, NavLink } from "react-router";
-import { useAuth } from "@/hooks/use-auth";
-import { useOwnerAdmin } from "@/hooks/use-owner-admin";
-import { useLocale } from "@/lib/i18n/LocaleProvider";
-import { cn } from "@/lib/utils";
-import type { ReactNode } from "react";
+/**
+ * The desktop rail: the same destinations the bottom bar carries, kept visible
+ * on a wide screen.
+ *
+ * ── Why it exists ──────────────────────────────────────────────────────────
+ * `BottomTabs` is a phone instrument. On a monitor the app has width nobody is
+ * using, and the nav it already has is either in the header (where it competes
+ * with the brand, the bell and the account) or pinned to the bottom of the
+ * window. A rail puts the same routes in a column that stays put.
+ *
+ * ── Why it is one component and not two ────────────────────────────────────
+ * The destinations differ by role — a rider's work screens, the owner's
+ * console, a commuter's booking home — but the *list* is the same list in one
+ * order, and duplicating it per role is how the header and the rail drift
+ * apart. The role only decides which entries are offered, never how they are
+ * drawn.
+ *
+ * ── Why it takes the role as a prop ────────────────────────────────────────
+ * `AppShell` has already read the profile; a second query here would be the
+ * same read twice and a second place for the two to disagree while one of them
+ * is still loading.
+ */
 
-interface RailLink {
+import { Car, ClipboardList, LayoutDashboard, MessageCircle, ShieldCheck, ShoppingBag } from "lucide-react";
+import { NavLink } from "react-router";
+import { useT } from "@/lib/i18n/LocaleProvider";
+import { cn } from "@/lib/utils";
+import type { LucideIcon } from "lucide-react";
+
+interface RailItem {
   to: string;
-  labelKey: string;
-  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
-  adminOnly?: boolean;
-  badge?: (isAdmin: boolean) => ReactNode;
+  label: string;
+  icon: LucideIcon;
+  /** `/app` is a prefix of nothing else, but `/rider` is — see `end`. */
+  end?: boolean;
 }
 
 export function ProfileNavigationRail({
-  currentPath,
+  role,
+  isAdmin,
 }: {
-  currentPath: string;
+  /** The signed-in account's FETCH role. */
+  role?: string;
+  /** Owner by address or by profile; decides the console entry. */
+  isAdmin: boolean;
 }) {
-  const { user } = useAuth();
-  const { isAdmin } = useOwnerAdmin();
-  const { t } = useLocale();
-  const location = useLocation();
+  const t = useT();
 
-  const links: RailLink[] = [
-    {
-      to: "/app",
-      labelKey: "nav.workspace",
-      icon: CircleDot,
-      badge: () => null,
-    },
-    {
-      to: "/activity",
-      labelKey: "nav.activity",
-      icon: ClipboardList,
-      badge: () => null,
-    },
-    {
-      to: "/chats",
-      labelKey: "nav.chats",
-      icon: MessageCircle,
-      badge: () => null,
-    },
-    {
-      to: "/profile",
-      labelKey: "profile.title",
-      icon: User,
-      badge: () => null,
-    },
-  ];
+  const items: RailItem[] = [];
 
   if (isAdmin) {
-    links.push(
-      {
-        to: "/admin",
-        labelKey: "nav.console",
-        icon: Shield,
-        adminOnly: true,
-        badge: () => (
-          <span className="ml-auto rounded-full bg-foreground px-1.5 py-0.5 text-[10px] font-semibold text-background">
-            Admin
-          </span>
-        ),
-      },
-    );
+    items.push({ to: "/admin", label: t("nav", "console"), icon: ShieldCheck });
+  }
+  if (role === "rider") {
+    // A rider's rail is their work first: the bookings to take, then the
+    // shift report. Same order the bottom bar uses.
+    items.push({ to: "/rider", label: t("nav", "available"), icon: Car });
+    items.push({
+      to: "/rider/dashboard",
+      label: t("nav", "dashboard"),
+      icon: LayoutDashboard,
+    });
+  } else if (!isAdmin) {
+    // A commuter books; the owner's rail is the console and nothing else it
+    // would still lead back into the passenger app from.
+    items.push({ to: "/app", label: t("nav", "home"), icon: ShoppingBag, end: true });
   }
 
-  const displaySelf = user?.email ?? "";
+  items.push({ to: "/activity", label: t("nav", "activity"), icon: ClipboardList });
+  items.push({ to: "/chats", label: t("nav", "chats"), icon: MessageCircle });
 
   return (
-    <nav className="flex flex-col gap-1" aria-label="Workspace navigation">
-      {links.map((link) => {
-        const Icon = link.icon;
-        const effectiveTo = link.adminOnly && !isAdmin ? "#" : link.to;
-        const inAdminOnlyState = link.adminOnly && !isAdmin;
-        const isActive =
-          !inAdminOnlyState &&
-          (location.pathname === link.to ||
-            (link.to !== "/app" && location.pathname.startsWith(link.to)));
-
+    <nav aria-label="Sections" className="flex flex-col gap-1">
+      {items.map((item) => {
+        const Icon = item.icon;
         return (
           <NavLink
-            key={link.to}
-            to={effectiveTo}
-            className={({ isActive: active }) =>
+            key={item.to}
+            to={item.to}
+            end={item.end}
+            className={({ isActive }) =>
               cn(
-                "flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                inAdminOnlyState
-                  ? "pointer-events-none opacity-40 cursor-not-allowed text-muted-foreground"
-                  : isActive || active
-                  ? "bg-primary/10 text-foreground"
-                  : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                "flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium tracking-tight transition-colors",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                isActive
+                  ? "bg-secondary text-foreground"
+                  : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
               )
             }
-            aria-current={isActive ? "page" : undefined}
-            onClick={(event) => {
-              if (inAdminOnlyState) {
-                event.preventDefault();
-              }
-            }}
           >
             <Icon className="size-4 shrink-0" aria-hidden />
-            <span className="truncate">{t(link.labelKey)}</span>
-            {link.badge?.(isAdmin)}
+            <span className="truncate">{item.label}</span>
           </NavLink>
         );
       })}
-      <div className="mt-auto pt-4 border-t border-border/60">
-        {displaySelf ? (
-          <div className="flex items-center gap-3 rounded-lg px-3 py-2">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold">
-              {displaySelf.split("@")[0][0]?.toUpperCase() ?? "?"}
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-foreground">
-                {displaySelf.split("@")[0] ?? ""}
-              </p>
-              <p className="truncate text-[11px] text-muted-foreground">
-                {t("account", "email")}
-                {displaySelf ? ` — ${displaySelf}` : ""}
-              </p>
-            </div>
-          </div>
-        ) : null}
-      </div>
     </nav>
-  );
-}
-
-function CircleDot({ className, "aria-hidden": ariaHidden }: { className?: string; "aria-hidden"?: boolean }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      width="16"
-      height="16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden={ariaHidden ?? true}
-    >
-      <circle cx="12" cy="12" r="10" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
   );
 }
