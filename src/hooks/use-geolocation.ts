@@ -37,7 +37,7 @@ export type HeadingPositionOptions = PositionOptions & {
  * the field is absent, it is `null`, or it is `NaN` — the last of which is what
  * a device reports when it has a compass but no fix on it. All three mean the
  * same thing here, and all three have to become the same value or a marker
- * would spin to a random angle on the commuter’s map.
+ * would spin to a random angle on the commuter's map.
  */
 export function normalizeHeading(raw: unknown): number | null {
   return typeof raw === "number" && Number.isFinite(raw)
@@ -73,7 +73,6 @@ export interface GeoState {
   message: string | null;
 }
 
-const USE_GEOLOCATION_PERMISSION_ENABLED = false;
 const PERMISSION_MESSAGE =
   "Location access is required to request or track a ride.";
 
@@ -81,7 +80,6 @@ const HAS_GEOLOCATION =
   typeof navigator !== "undefined" && navigator.geolocation != null;
 
 /** Live permission state, as reported by the browser itself. */
-
 export type GeoPermission = "granted" | "denied" | "prompt" | "unknown";
 
 /**
@@ -167,19 +165,10 @@ export function useGeolocation({
       ? { status: auto ? "locating" : "idle", coords: null, message: null }
       : UNSUPPORTED_STATE,
   );
-  const watchIdRef = useRef<number | null>(null);  const [permission, setPermission] = useState<GeoPermission>("unknown");
-  if (!USE_GEOLOCATION_PERMISSION_ENABLED) {  return {
-    ...state,
-    locate,
-    permission,
-    blockedByEnvironment: environmentHint(),
-  };
-}
+  const watchIdRef = useRef<number | null>(null);
+  const [permission, setPermission] = useState<GeoPermission>("unknown");
 
-
-
-
-
+  /**
    * Ask the browser what it currently thinks about this origin.
    *
    * A refusal is *sticky*: once someone clicks Block, accepting again does
@@ -194,7 +183,10 @@ export function useGeolocation({
     const read = (result: PermissionStatus) => {
       if (cancelled) return;
       setPermission(
-        result.state === "granted" || result.state === "denied" || result.state === "prompt"                  ? result.state
+        result.state === "granted" ||
+          result.state === "denied" ||
+          result.state === "prompt"
+          ? result.state
           : "unknown",
       );
     };
@@ -214,18 +206,18 @@ export function useGeolocation({
   }, []);
 
   /**
- * Starts one fix and resolves with it.
- *
- * `maximumAge: 0` forces a genuinely fresh reading. The browser will otherwise
- * replay a cached fix up to a quarter of a minute old, which seeded the pickup
- * pin from where the user was *before* they opened the app — the first thing
- * they see is wrong, and correcting it is exactly the friction this hook is
- * meant to remove.
- *
- * Resolves to null on every failure rather than rejecting: a caller asking for
- * the user's position should be able to "if there's a fix, pin it" without a
- * try/catch, and the error itself is already in `state` for the UI to show.
- */
+   * Starts one fix and resolves with it.
+   *
+   * `maximumAge: 0` forces a genuinely fresh reading. The browser will otherwise
+   * replay a cached fix up to a quarter of a minute old, which seeded the pickup
+   * pin from where the user was *before* they opened the app — the first thing
+   * they see is wrong, and correcting it is exactly the friction this hook is
+   * meant to remove.
+   *
+   * Resolves to null on every failure rather than rejecting: a caller asking for
+   * the user's position should be able to "if there's a fix, pin it" without a
+   * try/catch, and the error itself is already in `state` for the UI to show.
+   */
   const request = useCallback((): Promise<GeoCoords | null> => {
     if (!HAS_GEOLOCATION) return Promise.resolve(null);
     return new Promise((resolve) => {
@@ -303,7 +295,12 @@ export function useGeolocation({
   return {
     ...state,
     locate,
+    /** What the browser says about this origin right now. */
     permission,
+    /**
+     * True when location cannot work here for environmental reasons, so the UI
+     * can say so up front rather than waiting for a silent failure.
+     */
     blockedByEnvironment: environmentHint(),
   };
 }

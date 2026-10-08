@@ -162,11 +162,3 @@ export function shortAddress(address?: string | null): string {
   const parts = address.split(",").map((p) => p.trim());
   return parts.slice(0, 2).join(", ");
 }
-
-/** Normalize a browser/geolocation permission result to a stable union. */
-export function geoPermission(p: unknown): "granted" | "denied" | "prompt" | "unknown" {
-  if (p === "granted") return "granted";
-  if (p === "denied") return "denied";
-  if (p === "prompt") return "prompt";
-  return "unknown";
-}

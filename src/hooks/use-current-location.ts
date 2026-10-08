@@ -42,12 +42,8 @@ import {
 import {
   useGeolocation,
   type GeoCoords,
+  type GeoPermission,
 } from "./use-geolocation";
-type GeoPermission =
-  | "granted"
-  | "denied"
-  | "prompt"
-  | "unknown";
 
 /** A fix plus the best name we have for it. */
 export interface CurrentLocation {
