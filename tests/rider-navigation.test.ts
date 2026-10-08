@@ -1,19 +1,19 @@
-/**
- * The rider's navigation contract.
- *
- * Two regressions came out of splitting the rider dashboard into a bookings
- * list and a separate ride screen, and neither is visible in a unit test that
- * only inspects the tab list:
- *
- *  1. `NavLink` matches on path *prefixes* by default, so `to="/rider"` was
- *     also "active" on `/rider/ride` and two tabs lit up at once.
- *  2. GPS streaming lived inside one screen, so opening the ride screen stopped
- *     it — freezing the passenger's live map at exactly the moment it matters.
- *
- * These are source-level assertions. They are not as strong as rendering the
- * components, but they fail loudly when somebody reintroduces either bug,
- * which is the point: both shipped through a fully green suite once already.
- */
+/** The rider's navigation contract.
+
+Two regressions came out of splitting the rider dashboard into a bookings
+list and a separate ride screen, and neither is visible in a unit test that
+only inspects the tab list:
+
+  1. `NavLink` matches on path *prefixes* by default, so `to="/rider"` was
+     also "active" on `/rider/ride` and two tabs lit up at once.
+  2. GPS streaming lived inside one screen, so opening the ride screen stopped
+     it — freezing the passenger's live map at exactly the moment it matters.
+
+These are source-level assertions. They are not as strong as rendering the
+components, but they fail loudly when somebody reintroduces either bug,
+which is the point: both shipped through a fully green suite once already.
+*/
+
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 import { roleTabs } from "../src/lib/bottomTabs";
@@ -71,8 +71,29 @@ describe("GPS streaming survives navigation", () => {
     expect(riderDashboard).not.toContain("STREAM_INTERVAL_MS");
   });
 
-  test("the ride screen does not stream it either", () => {
-    expect(read("src/pages/RiderRide.tsx")).not.toContain("setInterval");
+  test("the live ride screen does not start GPS streaming itself", () => {
+    const ride = read("src/pages/RiderRide.tsx");
+    expect(ride).not.toContain("setInterval");
+  });
+
+  test("the booking screen hands off to the live ride screen, not a route page", () => {
+    expect(riderDashboard).toContain('to="/rider/ride"');
+  });
+
+  test("the live ride screen passes each leg to the map, and the map routes them separately", () => {
+    const ride = read("src/pages/RiderRide.tsx");
+    // The ride screen only assembles endpoint pairs; it never calls `fetchRoute`
+    // itself. That is deliberate: the map owns the road geometry so the same
+    // helper draws on the rider's map and the tracking screen's map.
+    expect(ride).toContain("MapView");
+    expect(ride).toContain("route={route}");
+    const map = read("src/components/map/MapView.tsx");
+    expect(map).toContain("fetchRoute(from, to)");
+  });
+
+  test("the map draws the road line through its own source, not the ride screen", () => {
+    const map = read("src/components/map/MapView.tsx");
+    expect(map).toContain('"fetch-route"');
   });
 });
 

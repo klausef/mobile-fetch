@@ -36,11 +36,10 @@
           "RNMapboxMapsVersion": "11.23.1"
         }
       ]
-    ],
-    "extra": {
-      "convexUrl": "https://scrupulous-sheep-213.convex.cloud",
-      "orsKey": "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjhlNGFlNTQ4NDAyZTQ1MGViZGIxYmU5ZjAwNTI3NjZhIiwiaCI6Im11cm11cjY0In0=",
-      "mapboxAccessToken": "pk.eyJ1Ijoia2xhdXNlZiIsImEiOiJjbXV3MWN2aWQwOWR4MnpteWF3Nzl5czRkIn0.4OqBbmexXNuoJkNwlPhQQQ"
-    }
+    ],	"extra": {
+		"convexUrl": "https://scrupulous-sheep-213.convex.cloud",
+		"orsKey": "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjhlNGFlNTQ4NDAyZTQ1MGViZGIxYmU5ZjAwNTI3NjZhIiwiaCI6Im11cm11cjY0In0=",
+		"mapboxAccessToken": "pk.eyJ1Ijoia2xhdXNlZiIsImEiOiJjbXV3MWN2aWQwOWR4MnpteWF3Nzl5czRkIn0.4OqBbmexXNuoJkNwlPhQQQ"
+	}
   }
 }

@@ -2,15 +2,14 @@
  * Mapbox map components for the mobile app.
  *
  * The first Mapbox surface in FETCH. It renders a Mapbox style, the user's current
- * location puck, pickup and destination pins, and a route line between them.
+ * location puck, pickup and destination pins, and the road route between them.
  *
- * This is intentionally kept as the mobile map surface for the route test screen
- * first. The existing web app uses its own MapLibre-based map and is not touched by
- * this file.
+ * The existing web app uses its own MapLibre-based map and is not touched by this
+ * file.
  */
 
-import { useRef } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { useRef, useState, useEffect } from "react";
+import { StyleSheet, Text, View, ActivityIndicator } from "react-native";
 import { MapView } from "@rnmapbox/maps";
 import { Camera } from "@rnmapbox/maps";
 import { ShapeSource } from "@rnmapbox/maps";
@@ -18,12 +17,35 @@ import { LineLayer } from "@rnmapbox/maps";
 import { UserLocation } from "@rnmapbox/maps";
 import { PointAnnotation } from "@rnmapbox/maps";
 
-import { LatLng } from "@/lib/shared";
+import { LatLng, DEFAULT_TARIFF } from "@/lib/shared";
 import { colors } from "@/lib/theme";
-import { straightLine } from "@/lib/mapbox-route";
+import {
+  straightLine,
+  drivingRoute,
+  type RouteCoordinate,
+} from "@/lib/mapbox-route";
 import { hasMapboxToken, configureMapbox } from "@/lib/mapbox";
 
 const MAPBOX_STYLE = "mapbox://styles/mapbox/streets-v12";
+
+// ORS uses the same HeiGIT key the web app uses for routing. Reached through the
+// pinned app config so the value is a build-time constant, not a runtime env lookup.
+function orsToken(): string {
+  try {
+    const constants = require("expo-constants").Constants as {
+      expoConfig?: {
+        extra?: { orsKey?: string };
+      };
+    };
+    const config = constants.expoConfig;
+    if (!config?.extra) return "";
+    return typeof config.extra.orsKey === "string"
+      ? config.extra.orsKey.trim()
+      : "";
+  } catch {
+    return "";
+  }
+}
 
 export interface MapPin {
   id: string;
@@ -36,8 +58,7 @@ export interface MapRoute {
   to: LatLng;
 }
 
-function geojsonForRoute(route: MapRoute): GeoJSON.Feature<GeoJSON.LineString> {
-  const coordinates = straightLine(route.from, route.to);
+function geojsonForRoute(coordinates: RouteCoordinate[]): GeoJSON.Feature<GeoJSON.LineString> {
   return {
     type: "Feature",
     geometry: {
@@ -62,6 +83,21 @@ export function MapboxMap({
   configureMapbox();
 
   const mapRef = useRef<MapView>(null!);
+  const [routeGeometry, setRouteGeometry] = useState<RouteCoordinate[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!route?.from || !route?.to) {
+      setRouteGeometry([]);
+      return;
+    }
+    void drivingRoute(route.from, route.to, orsToken()).then((geometry) => {
+      if (!cancelled) setRouteGeometry(geometry);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [route?.from, route?.to]);
 
   /*
    * No token in the build, so say that instead of drawing nothing.
@@ -109,8 +145,8 @@ export function MapboxMap({
         animationMode="none"
       />
 
-      {route && route.from && route.to && (
-        <ShapeSource id="route" shape={geojsonForRoute(route)}>
+      {routeGeometry.length > 0 && (
+        <ShapeSource id="route" shape={geojsonForRoute(routeGeometry)}>
           <LineLayer
             id="route-line"
             style={{
