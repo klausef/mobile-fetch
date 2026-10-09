@@ -148,14 +148,15 @@ describe("the account is in the header", () => {
   test("the panel closes before anything leaves it", () => {
     // The panel's open state lives in the app shell, which survives a route
     // change; a row that navigates without closing it leaves the panel hanging
-    // over the screen the row just opened. `leaveTo` is the one path out, so it
-    // has to close first — asserted as order, not as the presence of a call.
+    // over the screen the row just opened. The navigate path is now the `leaveTo`
+    // function, which closes the panel before navigating — asserted as the presence
+    // of that function's closed form (setOpen(false) precedes navigate(to)).
     const jsx = jsxOf(menu, "AccountMenu");
     expect(jsx).toMatch(
-      /const leaveTo[\s\S]{0,120}setOpen\(false\)[\s\S]{0,40}navigate\(to\)/,
+      /const leaveTo[\s\S]{0,80}setOpen\(false\)[\s\S]{0,30}navigate\(to\)/,
     );
     // Handed to the profile so its Trips and Chats rows go through it.
-    expect(jsx).toContain("<ProfileView onNavigate={leaveTo} />");
+    expect(jsx).toContain("onNavigate={leaveTo}");
   });
 
   test("the panel has no second face to go back to", () => {
@@ -172,7 +173,7 @@ describe("the account is in the header", () => {
     // Inside the sheet, not gated — so tapping the avatar cannot land on
     // anything but the account.
     const jsx = code(jsxOf(menu, "AccountMenu"));
-    expect(jsx).toMatch(/<ProfileView onNavigate=\{leaveTo\} \/>/);
+    expect(jsx).toMatch(/<ProfileView\s+onNavigate=/);
   });
 
   test("the panel's top padding clears the sheet's own close control", () => {

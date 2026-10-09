@@ -2384,8 +2384,7 @@ const BOOKING_RIDE_TYPE: RideType = "motorcycle";
         <div className="order-1 lg:order-2" ref={mapWrapRef}>
           {/* Edge-to-edge on a phone, boxed from sm up: a map inset in page
               padding reads as a web widget, not as the app's main surface. */}
-          <div className="relative -mx-4 overflow-hidden border-b border-border sm:mx-0 sm:rounded-2xl sm:border lg:border">
-            <MapView
+          <div className="relative -mx-4 overflow-hidden border-b border-border sm:mx-0 sm:rounded-2xl sm:border lg:border">              <MapView
               center={center}
               zoom={zoom}
               markers={markers}
@@ -2403,6 +2402,10 @@ const BOOKING_RIDE_TYPE: RideType = "motorcycle";
               onDragPointChange={handleDragPointChange}
               onDragPointEnd={handleDragPointEnd}
               onMarkerClick={handleMarkerClick}
+              // When the booking confirmation sheet is open the map is behind a
+              // full-screen overlay, so drop the pin targets and zoom affordance
+              // that would otherwise sit unreachably under the sheet.
+              interactive={bookedRideId == null}
               // dvh, not vh: on a phone the URL bar collapses while you scroll,
               // and a vh-sized map then overflows the space it was given.
               //

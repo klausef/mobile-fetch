@@ -63,8 +63,11 @@ import { toast } from "sonner";
 export function ProfileView({
   /** Called by rows that leave the account entirely. */
   onNavigate,
+  /** Called when a settings sheet opens so the host panel can close first. */
+  onSettingsOpen,
 }: {
   onNavigate?: (to: string) => void;
+  onSettingsOpen?: () => void;
 }) {
   const { signOut, user, signIn } = useAuth();
   const t = useT();
@@ -286,13 +289,21 @@ export function ProfileView({
           icon={UserRound}
           label={t("profile", "languageAppearance")}
           hint={LOCALE_NAMES[locale]}
-          onClick={() => setSettingsOpen(true)}
+          onClick={() => {
+            setAreaOpen(false);
+            setSettingsOpen(true);
+            onSettingsOpen?.();
+          }}
         />
         <SettingRow
           icon={MapPinned}
           label={t("coverage", "menuLabel")}
           hint={t("coverage", "menuHint")}
-          onClick={() => setAreaOpen(true)}
+          onClick={() => {
+            setSettingsOpen(false);
+            setAreaOpen(true);
+            onSettingsOpen?.();
+          }}
         />
       </SettingGroup>
 
@@ -344,8 +355,14 @@ export function ProfileView({
       </p>
     </div>
 
-    <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} />
-    <ServiceAreaSheet open={areaOpen} onOpenChange={setAreaOpen} />
+    <SettingsSheet open={settingsOpen} onOpenChange={(open) => {
+      setSettingsOpen(open);
+      if (!open) onSettingsOpen?.();
+    }} />
+    <ServiceAreaSheet open={areaOpen} onOpenChange={(open) => {
+      setAreaOpen(open);
+      if (!open) onSettingsOpen?.();
+    }} />
 
     {/* The two legal rows, as one sheet with the copy inline. Written to say
         what this deployment actually does rather than to sound like a policy

@@ -57,7 +57,10 @@ export function AccountMenu() {
       <SheetContent side="right" className="w-full max-w-sm pt-16">
         <SheetTitle>{t("profile", "title")}</SheetTitle>
         <div className="flex-1 overflow-y-auto px-1 pb-6">
-          <ProfileView onNavigate={leaveTo} />
+          <ProfileView
+            onNavigate={leaveTo}
+            onSettingsOpen={() => setOpen(false)}
+          />
         </div>
       </SheetContent>
     </Sheet>
