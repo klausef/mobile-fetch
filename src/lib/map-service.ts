@@ -146,6 +146,9 @@ export const hasMapTiler = MAPTILER_KEY.length > 0;
 /** True when road routing is configured; otherwise routes are drawn directly. */
 export const hasOrs = ORS_KEY.length > 0;
 
+/** The basemap the running bundle is using, so diagnostics need one live read. */
+export const activeBasemap: TileConfig = getBasemap();
+
 /** How many suggestions a provider is asked for. */
 const SEARCH_LIMIT = 5;
 
@@ -330,11 +333,16 @@ const MAPTILER_PROVIDER: MapProvider = {
 
 /** The provider the app is actually using, given the keys it was built with. */
 export function getMapProvider(): MapProvider {
-  return hasMapTiler ? MAPTILER_PROVIDER : OSM_PROVIDER;
+  return basemapMatchesConfig() ? (hasMapTiler ? MAPTILER_PROVIDER : OSM_PROVIDER) : OSM_PROVIDER;
 }
 
 /** Attribution line for the active provider, rendered under the map. */
 export const MAP_ATTRIBUTION = getBasemap().attribution;
+
+function basemapMatchesConfig(): boolean {
+  if (!hasMapTiler) return activeBasemap.id === "osm";
+  return activeBasemap.id === "maptiler";
+}
 /* ── Public helpers ───────────────────────────────────────────────────────── */
 
 export async function searchPlaces(
