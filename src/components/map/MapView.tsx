@@ -51,6 +51,7 @@ import { clampToRegion, REGION } from "@/lib/region";
 import {
   MAP_ATTRIBUTION,
   getBasemap,
+  hasMapTiler,
   type LatLng,
 } from "@/lib/map-service";
 import { fetchRoute, straightGeometry } from "@/lib/routing-service";
@@ -627,7 +628,14 @@ export function MapView({
     L.tileLayer(basemap.url, {
       maxZoom: basemap.maxZoom,
       attribution: basemap.attribution,
-    }).addTo(map);
+      errorTileUrl: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3C/svg%3E",
+      updateWhenIdle: true,
+      updateWhenZooming: true,
+      // Keep property access uncheckable against the strict DT type so the layer
+      // can accept the runtime Leaflet defaults without a cast. The contract here
+      // is the live Leaflet build, not the static type cut in @types/leaflet.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any).addTo(map);
 
     /*
      * A tile server that will not answer is only discovered here.
@@ -639,12 +647,20 @@ export function MapView({
      * matters, and an endless retry of the *notice* would just flicker.
      */
     let degradedNoticed = false;
+    const tileUrlLabel =
+      basemap.id === "maptiler"
+        ? `maptiler (${basemap.url.split("/")[2]})`
+        : "openstreetmap";
     const noticeDegraded = () => {
       if (degradedNoticed) return;
       degradedNoticed = true;
       map.off("tileerror", noticeDegraded);
       window.clearTimeout(tileWatchdog);
       setDegraded(true);
+      console.warn(
+        "[fetch] map tiles unavailable from %s — pins are still live",
+        tileUrlLabel,
+      );
     };
     map.on("tileerror", noticeDegraded);
     /*
@@ -1237,15 +1253,20 @@ export function MapView({
               No map tiles yet.
             </p>
             <p className="text-[11px] leading-snug text-muted-foreground">
-              The basemap could not be reached. Pins are still live — check the
-              connection and the map will populate on its own.
-            </p>
+              {getBasemap().id === "maptiler"
+                ? "The basemap could not be reached. If a MapTiler key is configured, it may be invalid or expired; otherwise check the connection."
+                : "The basemap could not be reached. Pins are still live — check the connection and the map will populate on its own."}
+          </p>
           </Card>
         </div>
       ) : null}
 
       <div className="pointer-events-none absolute bottom-2 left-3 z-10 text-[10px] tracking-tight text-muted-foreground">
         {MAP_ATTRIBUTION}
+      </div>
+      <div className="pointer-events-none absolute bottom-2 right-3 z-10 text-[10px] tracking-tight text-muted-foreground">
+        Tiles: {getBasemap().id === "maptiler" ? "MapTiler" : "OpenStreetMap"}
+        {hasMapTiler ? " · key: yes" : ""}
       </div>
     </div>
   );
