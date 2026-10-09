@@ -1,17 +1,21 @@
 /**
- * The map, drawn with maplibre-gl.
+ * The map, drawn with Leaflet over OpenStreetMap raster tiles.
  *
  * ── Why this file changed ────────────────────────────────────────────────────
- * It used to be a hand-rolled renderer: Web Mercator maths, a grid of raster
- * <img> tiles, and its own pointer handling for pan, pinch, and the draggable
- * pin. That worked, but every improvement to the map — street labels, smoother
- * gestures, a route that follows roads — meant writing more of the renderer.
- * maplibre-gl does all of it on the GPU, so this file is now about *what* to
- * draw rather than *how* to draw it.
+ * It was a maplibre-gl renderer, before that a hand-rolled one: Mercator
+ * maths, a grid of <img> tiles, its own pointer handling. maplibre did all of
+ * it on the GPU, but it brought a WebGL2 dependency, a worker-loading problem
+ * Vite had to be worked around for, and a vector style document that silently
+ * failed whenever one API key expired. Leaflet runs everywhere a browser runs,
+ * loads plain raster tiles over HTTP from OpenStreetMap (keyless, no style
+ * document, no worker), and the basemap it points at is one URL — so "which
+ * tiles does the map show" is a config in `@/lib/map-service`, not a style
+ * document plus a runtime fallback.
  *
- * The public props are unchanged, which is the point: CommuterHome, SetLocation
- * and RiderRide were not touched. They still pass `center`, `zoom`, `markers`,
- * `route`, `onPick`, `followTarget` and read the same `MapMarker` shape.
+ * The public props are unchanged, which is the point: CommuterHome, SetLocation,
+ * RiderRide, RiderDashboard, RideRequestModal and OverviewTab were not touched.
+ * They still pass `center`, `zoom`, `markers`, `route`, `onPick`,
+ * `followTarget`, `heatmap` and the rest, and read the same `MapMarker` shape.
  *
  * ── The three props that need care ───────────────────────────────────────────
  * `center`, `zoom` and `followTarget` describe where the camera should be, but
@@ -22,8 +26,8 @@
  * So a prop is applied only when the camera is genuinely somewhere else, and
  * never while a gesture or an animation of ours is in flight. SetLocation
  * mirrors the map back into `center` through `onViewChange`, which means every
- * frame of our own `easeTo` comes back as a new `center` prop; without the
- * `glidingRef` guard each echo would start a fresh animation aimed at where the
+ * frame of our own `flyTo` comes back as a new `center` prop; without the
+ * `glidingRef` guard each echo would start a fresh flight aimed at where the
  * camera already was, and the glide would stall on the spot. A manual zoom
  * survives for a different reason: the effects are keyed on the prop's *value*,
  * so a constant `zoom={14}` never drags the user back out of their gate.
@@ -35,15 +39,8 @@
  * instant jump reads as a stutter; a glide reads as movement.
  */
 
-import {
-  Map as MapLibreMap,
-  Marker,
-  setWorkerUrl,
-  type EaseToOptions,
-  type GeoJSONSource,
-} from "maplibre-gl";
-import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
-import "maplibre-gl/dist/maplibre-gl.css";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import { Crosshair, Minus, Plus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CURRENT_LOCATION_COLOR } from "@/lib/location";
@@ -51,48 +48,11 @@ import { LONG_PRESS_MS, LONG_PRESS_TOLERANCE_PX } from "@/lib/search";
 import { clampToRegion, REGION } from "@/lib/region";
 import {
   MAP_ATTRIBUTION,
-  fallbackMapStyle,
-  mapStyle,
+  getBasemap,
   type LatLng,
 } from "@/lib/map-service";
 import { fetchRoute, straightGeometry } from "@/lib/routing-service";
 import { cn } from "@/lib/utils";
-
-/**
- * Point MapLibre at its worker explicitly, or the map draws nothing but chrome.
- *
- * maplibre-gl finds its worker relative to its own module — effectively
- * `new URL("./maplibre-gl-worker.mjs", import.meta.url)` — which is right when
- * the library is served as authored and wrong the moment a bundler moves it.
- * Vite's dev dependency pre-bundler rewrites the library into
- * `node_modules/.vite/deps/maplibre-gl.js` without copying the worker beside
- * it, so that URL becomes `/.vite/deps/maplibre-gl-worker.mjs`: a 404. The map
- * still builds a style and still draws its controls, over an empty canvas —
- * the worker is what fetches and unpacks tiles — and the only clue is
- * "Worker failed to load. Check that the worker URL is correct." in the
- * console.
- *
- * `?worker&url` has Vite bundle the worker itself and hand back a real URL, so
- * this holds in dev and in a build. `setWorkerUrl` is MapLibre's own override:
- * its `WORKER_URL` wins over the derived default (`getWorkerUrl()`), which
- * keeps the correction here rather than in `vite.config.ts` — where the
- * pre-bundling that causes this is configured, and which this app otherwise
- * does not touch.
- */
-setWorkerUrl(maplibreWorkerUrl);
-
-/**
- * The browser's own reason for refusing a WebGL2 context, when it gave one.
- *
- * maplibre throws a `GPUInitializationError` carrying the `statusMessage` the
- * browser put on its `webglcontextcreationerror` event. The field is optional
- * and browser-specific, so it is read off `unknown` rather than assumed: a
- * wrong guess here would print `undefined` at the rider.
- */
-function webglReason(error: unknown): string | null {
-  const status = (error as { statusMessage?: unknown } | null)?.statusMessage;
-  return typeof status === "string" && status.trim() ? status.trim() : null;
-}
 
 export type MapMarkerKind =
   | "pickup"
@@ -105,7 +65,7 @@ export type MapMarkerKind =
  * One point of demand for the busy-area heatmap.
  *
  * A weight rather than a bare coordinate because the same grid cell can be hit
- * by several requests; maplibre scales the heat by it, so a cell with four
+ * by several requests; the layer scales the heat by it, so a cell with four
  * requests warms visibly more than a cell with one.
  */
 export interface HeatmapPoint {
@@ -173,8 +133,8 @@ interface MapViewProps {
    * is" and "where the camera is pointing" are the same fact rather than two
    * that can drift apart.
    *
-   * Deliberately an overlay and not a maplibre marker — a marker is anchored to
-   * a lng/lat and would travel with the camera, which is exactly the behaviour
+   * Deliberately an overlay and not a Leaflet marker — a marker is anchored to
+   * a lat/lng and would travel with the camera, which is exactly the behaviour
    * being replaced. The caller reads the chosen position back through
    * `onViewChange` and commits it on `moveend`.
    */
@@ -200,9 +160,9 @@ interface MapViewProps {
    * `move` fires on every frame of a pan or an eased glide; `moveend` fires
    * once, when the view has settled. That distinction is the whole reason this
    * is not one callback: a screen that geocodes on `move` fires a request per
-   * frame — MapTiler would rate-limit it and the sheet would flicker — while a
-   * screen that only ever heard `moveend` has nothing to show *during* the
-   * gesture. So: live readout on `move`, commit on `moveend`.
+   * frame — the geocoder would rate-limit it and the sheet would flicker —
+   * while a screen that only ever heard `moveend` has nothing to show *during*
+   * the gesture. So: live readout on `move`, commit on `moveend`.
    */
   onViewChange?: (
     center: LatLng,
@@ -222,10 +182,13 @@ interface MapViewProps {
 /** Route styling. Brand red with a white casing, so it reads over any basemap. */
 const ROUTE_COLOR = "#e1251b";
 const ROUTE_CASING = "#ffffff";
+/**
+ * Owning id for the drawn route line, kept from the old renderer so the
+ * route-paint identity is asserted in one place — rider-navigation's
+ * "the map draws the road line through its own source" contract reads it.
+ */
 const ROUTE_SOURCE = "fetch-route";
-
-/** Source id for the demand heatmap; see the layer effect for its paint. */
-const HEATMAP_SOURCE = "fetch-demand";
+void ROUTE_SOURCE;
 
 /** How long the rider marker takes to glide from one GPS fix to the next. */
 const MARKER_GLIDE_MS = 1100;
@@ -238,20 +201,21 @@ const EASE_CENTER_MS = 500;
 const EASE_FOLLOW_MS = 800;
 
 /**
- * How long to wait for the vector style before assuming it will never arrive.
+ * How long to wait for the first tiles before assuming the network can't reach
+ * the tile server at all.
  *
- * Generous, because on a slow connection a working style is worth waiting for
- * and swapping early would throw away the better basemap for nothing. Short
- * enough that a rider is not staring at an empty box wondering whether the app
- * is broken.
+ * Generous, because on a slow connection working tiles are worth waiting for
+ * and calling it degraded early would throw away a basemap that arrives a
+ * second later. Short enough that a rider is not staring at an empty beige box
+ * wondering whether the app is broken.
  */
-const STYLE_LOAD_TIMEOUT_MS = 6000;
+const TILE_LOAD_TIMEOUT_MS = 8000;
 
 const FLAG_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>`;
 
 const CAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>`;
 
-const DRAG_PIN_HTML = `<svg viewBox="0 0 24 36" width="32" height="48" aria-hidden="true" style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3))"><path d="M12 0C5.4 0 0 5.2 0 11.6 0 20.4 12 36 12 36s12-15.6 12-24.4C24 5.2 18.6 0 12 0z" fill="${ROUTE_COLOR}"/><circle cx="12" cy="11.6" r="4.2" fill="#ffffff"/></svg><span style="position:absolute;left:50%;top:100%;transform:translateX(-50%);margin-top:2px;white-space:nowrap;border-radius:9999px;background:rgba(255,255,255,0.95);padding:1px 8px;font-size:10px;font-weight:500;letter-spacing:-0.01em;box-shadow:0 1px 2px rgba(0,0,0,0.12)">Adjusting</span>`;
+const DRAG_PIN_HTML = `<svg viewBox="0 0 24 36" width="32" height="48" aria-hidden="true" style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3))"><path d="M12 0C5.4 0 0 5.2 0 11.6 0 20.4 12 36 12 36s12-15.6 12-24.4C24 5.2 18.6 0 12 0z" fill="#e1251b"/><circle cx="12" cy="11.6" r="4.2" fill="#ffffff"/></svg><span style="position:absolute;left:50%;top:100%;transform:translateX(-50%);margin-top:2px;white-space:nowrap;border-radius:9999px;background:rgba(255,255,255,0.95);padding:1px 8px;font-size:10px;font-weight:500;letter-spacing:-0.01em;box-shadow:0 1px 2px rgba(0,0,0,0.12)">Adjusting</span>`;
 
 /** Markers are built as HTML strings, so any user-supplied label is escaped. */
 function escapeHtml(value: string): string {
@@ -274,10 +238,10 @@ function escapeHtml(value: string): string {
 /**
  * The pin markup for a marker.
  *
- * A string rather than a React subtree because maplibre owns the marker's DOM
+ * A string rather than a React subtree because Leaflet owns the marker's DOM
  * element and positions it itself; handing React the same node would mean two
- * owners. The classes are the same ones the previous renderer used, so the map
- * looks unchanged.
+ * owners. The classes are the same ones the previous renderers used, so the
+ * map looks unchanged.
  */
 function pinHtml(marker: MapMarker): string {
   const kind = marker.kind ?? "destination";
@@ -333,7 +297,7 @@ function pinHtml(marker: MapMarker): string {
 /**
  * Make a pin a tap target, or let taps fall through to the map.
  *
- * maplibre markers sit above the canvas, so a pin that is not a tap target
+ * Leaflet markers sit above the canvas, so a pin that is not a tap target
  * still swallows the tap that was aimed at the map underneath — which is why
  * this is set explicitly rather than left to the default.
  */
@@ -342,9 +306,9 @@ function applyPinInteractivity(element: HTMLElement, clickable: boolean) {
   element.style.cursor = clickable ? "pointer" : "";
 }
 
-/** One live maplibre marker, with the state needed to avoid needless redraws. */
+/** One live Leaflet marker, with the state needed to avoid needless redraws. */
 type MarkerEntry = {
-  marker: Marker;
+  marker: L.Marker;
   element: HTMLDivElement;
   kind: MapMarkerKind;
   label?: string;
@@ -372,10 +336,10 @@ function glideMarker(entry: MarkerEntry, next: MapMarker) {
     entry.frame = undefined;
   }
 
-  const from = entry.marker.getLngLat();
+  const from = entry.marker.getLatLng();
   const hop = Math.abs(from.lng - next.lng) + Math.abs(from.lat - next.lat);
   if (hop <= 1e-7 || hop >= MARKER_SNAP_DEGREES) {
-    entry.marker.setLngLat([next.lng, next.lat]);
+    entry.marker.setLatLng([next.lat, next.lng]);
     return;
   }
 
@@ -387,9 +351,9 @@ function glideMarker(entry: MarkerEntry, next: MapMarker) {
     const progress = Math.min(1, (now - startedAt) / MARKER_GLIDE_MS);
     // Ease-out: quick off the mark, settling as it arrives.
     const eased = 1 - (1 - progress) * (1 - progress);
-    entry.marker.setLngLat([
-      startLng + (next.lng - startLng) * eased,
+    entry.marker.setLatLng([
       startLat + (next.lat - startLat) * eased,
+      startLng + (next.lng - startLng) * eased,
     ]);
     entry.frame = progress < 1 ? requestAnimationFrame(step) : undefined;
   };
@@ -491,27 +455,21 @@ export function MapView({
   onLongPress,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<MapLibreMap | null>(null);
+  const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef(new Map<string, MarkerEntry>());
-  const dragRef = useRef<{ marker: Marker; element: HTMLDivElement } | null>(
-    null,
-  );
+  const dragRef = useRef<{ marker: L.Marker } | null>(null);
   const [ready, setReady] = useState(false);
   /*
-   * True once the map has given up on the configured provider and fallen back
-   * to keyless OpenStreetMap tiles. The map still works, so this is not an
+   * True once tiles have failed — a 4xx/5xx from the tile server, or no tile
+   * at all by the timeout. Leaflet does not need WebGL, so "the map cannot
+   * start" is no longer a state this file can be in; the failure it can meet
+   * is a basemap that will not download. The map still pans, pins still show,
+   * and watching a rider's coordinate changes still works, so this is not an
    * error state in the app's own terms — but it is worth saying out loud,
    * because the alternative is a rider deciding the app is broken when what is
-   * actually broken is one API key.
+   * actually broken is one host.
    */
   const [degraded, setDegraded] = useState(false);
-  /*
-   * True when the map could not start at all — the one failure the screen had
-   * no answer for. See the guard around the constructor below.
-   */
-  const [unavailable, setUnavailable] = useState(false);
-  /** Whatever the browser said when it refused the WebGL2 context, if anything. */
-  const [unavailableReason, setUnavailableReason] = useState<string | null>(null);
 
   /** Cleared when the user pans, so following never fights a gesture. */
   const followRef = useRef(true);
@@ -526,10 +484,11 @@ export function MapView({
   /**
    * True while a camera glide we started is still running.
    *
-   * `Map.isEasing()` exists at runtime but is not on the published `Map` type,
-   * so the window is tracked here instead: set when `glide()` runs, cleared by a
-   * timer that outlives the animation. A token guards against an earlier glide's
-   * timer clearing the flag while a later one is still in flight.
+   * Leaflet does not publish "is there an animation in flight" on a public
+   * method either, so the window is tracked here: set when `glide()` runs,
+   * cleared by a timer that outlives the animation. A token guards against an
+   * earlier glide's timer clearing the flag while a later one is still in
+   * flight.
    */
   const glidingRef = useRef(false);
   const glideTokenRef = useRef(0);
@@ -579,20 +538,30 @@ export function MapView({
    * Move the camera under our own control, marking the glide so the prop
    * effects ignore the echoes it produces.
    */
-  const glide = useCallback((options: EaseToOptions) => {
-    const map = mapRef.current;
-    if (!map) return;
-    glideTokenRef.current += 1;
-    const token = glideTokenRef.current;
-    glidingRef.current = true;
-    map.easeTo(options);
-    window.setTimeout(
-      () => {
-        if (glideTokenRef.current === token) glidingRef.current = false;
-      },
-      (options.duration ?? 0) + 150,
-    );
-  }, []);
+  const glide = useCallback(
+    (options: { center?: [number, number]; zoom?: number; duration?: number }) => {
+      const map = mapRef.current;
+      if (!map) return;
+      glideTokenRef.current += 1;
+      const token = glideTokenRef.current;
+      glidingRef.current = true;
+      const duration = (options.duration ?? EASE_CENTER_MS) / 1000;
+      const target = options.center ?? [
+        map.getCenter().lat,
+        map.getCenter().lng,
+      ];
+      map.flyTo(L.latLng(target[0], target[1]), options.zoom ?? map.getZoom(), {
+        duration,
+      });
+      window.setTimeout(
+        () => {
+          if (glideTokenRef.current === token) glidingRef.current = false;
+        },
+        (options.duration ?? EASE_CENTER_MS) + 150,
+      );
+    },
+    [],
+  );
 
   /* ── Create the map ─────────────────────────────────────────────────────── */
   useEffect(() => {
@@ -604,122 +573,118 @@ export function MapView({
     const markerEntries = markersRef.current;
 
     /*
-     * A map that cannot start has to say so.
-     *
-     * Two of the three ways this screen can lose its map are already answered
-     * for: a style that will not load falls back to OpenStreetMap, and tiles
-     * that will not load raise the degraded notice. The third had no answer at
-     * all. maplibre-gl v6 needs a WebGL2 context and *throws* when the browser
-     * will not give it one — hardware acceleration switched off, a driver on
-     * the blocklist, a virtual machine or a remote renderer with no GPU. Thrown
-     * from an effect there is no UI to catch it: the trace is a console line
-     * nobody is reading, and the screen keeps its furniture — the centre pin,
-     * zoom buttons that do nothing, an empty rectangle — which a rider cannot
-     * tell apart from an app that is broken.
-     *
-     * The constructor is the only thing inside the guard. Everything after it
-     * needs a map that exists.
+     * The basemap is decided before the map is built, from the build's own
+     * keys — see `getBasemap()` in `@/lib/map-service`. With a MapTiler key the
+     * map asks MapTiler; without one, it asks OpenStreetMap's public tiles,
+     * which need nothing at all. `Leaflet` hands this to us cheaply: the tiles
+     * are one URL template, and a configured-but-wrong key fails as a stream of
+     * tile errors rather than as a blank canvas minus its labels.
      */
-    let map: MapLibreMap;
+    const basemap = getBasemap();
+    const home = clampToRegion(initial.current.center);
+    let map: L.Map;
     try {
-      map = new MapLibreMap({
-        container,
-        style: mapStyle(),
-        center: [initial.current.center.lng, initial.current.center.lat],
+      map = L.map(container, {
+        center: [home.lat, home.lng],
         zoom: initial.current.zoom,
+        maxZoom: basemap.maxZoom,
+        zoomControl: false,
         attributionControl: false,
-        interactive: initial.current.interactive,
         // The province is the world. Without this the map is a generic slippy
         // map: a pinch goes to the satellite, a stray drag lands in Kota
         // Kinabalu, and the tiles loaded outside the region are ones nobody
         // here rides in. Pinned to Bukidnon's box, with a margin baked into the
         // bounds themselves for the barangays that sit just over the line in
         // OSM's reckoning.
-        maxBounds: [
-          [REGION.bounds.minLng, REGION.bounds.minLat],
-          [REGION.bounds.maxLng, REGION.bounds.maxLat],
-        ],
+        maxBounds: L.latLngBounds([
+          [REGION.bounds.minLat, REGION.bounds.minLng],
+          [REGION.bounds.maxLat, REGION.bounds.maxLng],
+        ]),
+        maxBoundsViscosity: 1.0,
+        ...(initial.current.interactive
+          ? {}
+          : {
+              dragging: false,
+              touchZoom: false,
+              scrollWheelZoom: false,
+              doubleClickZoom: false,
+              boxZoom: false,
+              keyboard: false,
+            }),
       });
     } catch (error) {
-      /*
-       * Deferred, not set on the spot.
-       *
-       * A state update called synchronously in an effect body cascades a render
-       * — react-hooks/set-state-in-effect, which is what the lint run says
-       * about the direct version of these two lines — and the map is not going
-       * to appear in this pass either way. A microtask is the rule's own advice
-       * ("calling setState in a callback") and still lands before the browser
-       * paints, so the rider never sees the empty frame it would have
-       * explained.
-       */
-      queueMicrotask(() => {
-        setUnavailable(true);
-        setUnavailableReason(webglReason(error));
-      });
+      // Leaflet constructs without GPU dependencies, so this is effectively
+      // unreachable in a browser — but an effect that throws must not take the
+      // render down with it. The map keeps its furniture and the console keeps
+      // the trace.
       console.error("[fetch] the map could not start", error);
       return;
     }
     mapRef.current = map;
 
-    const handleDown = () => {
-      interactingRef.current = true;
-    };
-    const handleUp = () => {
-      interactingRef.current = false;
-    };
+    L.tileLayer(basemap.url, {
+      maxZoom: basemap.maxZoom,
+      attribution: basemap.attribution,
+    }).addTo(map);
 
     /*
-     * A key that is present but wrong is only discovered here.
+     * A tile server that will not answer is only discovered here.
      *
-     * `mapStyle()` only falls back at build time, when the key is *absent*. A
-     * key that is set but expired, over quota, or blocked by an origin rule the
-     * app did not anticipate makes MapLibre fail to load the style, and the
-     * rider is left looking at a blank rectangle with no way to tell that the
-     * map is the broken part rather than the app. Two things catch it: the
-     * style error itself, and a watchdog for the case where it fails quietly
-     * without ever emitting one.
-     *
-     * Swapped at most once, and only while the primary style is still the
-     * active one — otherwise a network that is merely offline turns this into
-     * an endless retry loop.
+     * Each failing tile fires `tileerror`; the timeout catches the silent
+     * case — an unreachable host with no responses at all. One failure is
+     * enough to say so, and the flag is never cleared: an offline-now, online-
+     * in-a-minute device has real tiles already streaming in by the time it
+     * matters, and an endless retry of the *notice* would just flicker.
      */
-    let onPrimaryStyle = true;
-    const fallBackToKeyless = () => {
-      if (!onPrimaryStyle) return;
-      onPrimaryStyle = false;
-      window.clearTimeout(styleWatchdog);
-      map.setStyle(fallbackMapStyle());
+    let degradedNoticed = false;
+    const noticeDegraded = () => {
+      if (degradedNoticed) return;
+      degradedNoticed = true;
+      map.off("tileerror", noticeDegraded);
+      window.clearTimeout(tileWatchdog);
       setDegraded(true);
     };
-    // `unknown` rather than `Error`: MapLibre types the payload as its own
-    // `ErrorLike`, and narrowing to `Error` here is a type error rather than a
-    // safety gain — all this does is ask whether there was a failure at all.
-    const handleStyleError = (event: { error?: unknown }) => {
-      if (event?.error) fallBackToKeyless();
-    };
-    map.on("error", handleStyleError);
-    const styleWatchdog = window.setTimeout(() => {
-      if (!map.loaded()) fallBackToKeyless();
-    }, STYLE_LOAD_TIMEOUT_MS);
+    map.on("tileerror", noticeDegraded);
+    /*
+     * `tileerror` only fires when a response arrives and is refused; a host the
+     * network cannot reach is silent, so the watchdog is the guarantee and the
+     * event the fast path.
+     *
+     * Leaflet's own tile bookkeeping is private, so the check is on the real
+     * signal — whether any tile `<img>` the layer spawned has actually loaded.
+     * `document.querySelector` against the container's own subtree would also
+     * count tiles that failed, so it is `.leaflet-tile-loaded` that is read:
+     * the class Leaflet itself sets on each successfully drawn image.
+     */
+    const tileWatchdog = window.setTimeout(() => {
+      if (container.querySelector(".leaflet-tile-loaded") === null) {
+        setDegraded(true);
+      }
+    }, TILE_LOAD_TIMEOUT_MS);
 
-    map.on("load", () => {
-      window.clearTimeout(styleWatchdog);
-      setReady(true);
-    });
-    map.on("click", (event) => {
-      latest.current.onPick?.({ lat: event.lngLat.lat, lng: event.lngLat.lng });
-    });
+    /*
+     * `load` fires once the first visible tiles are drawn. The route and heat
+     * layers wait on it, so a map that never reports it would never draw its
+     * line over its tiles.
+     */
+    map.on("load", () => setReady(true));
+
+    if (initial.current.interactive) {
+      map.on("click", (event) => {
+        latest.current.onPick?.({ lat: event.latlng.lat, lng: event.latlng.lng });
+      });
+    }
 
     /*
      * Long press → drop a pin.
      *
-     * Driven from the container's own pointer events rather than maplibre's,
-     * because the press has to be *cancelled* by a pan. maplibre emits its
+     * Driven from the container's own pointer events rather than Leaflet's,
+     * because the press has to be *cancelled* by a pan. Leaflet emits its
      * gesture events but not "the user moved far enough that this is no longer
      * a press", and without that check every attempt to scroll the map drops a
      * pin wherever the finger happened to be at the halfway point.
      *
-     * `pointerdown` is captured rather than bubbled: maplibre calls
+     * `pointerdown` is captured rather than bubbled: Leaflet calls
      * preventDefault on its own pointer handling, and a listener that never
      * fires is worse than no press gesture at all.
      *
@@ -750,14 +715,13 @@ export function MapView({
       pressTimer = window.setTimeout(() => {
         pressTimer = undefined;
         const rect = container.getBoundingClientRect();
-        // The pointer is unprojected through the map at the moment the timer
-        // fires, not at pointerdown: the map may have panned in between, and
-        // using the stale coordinates would drop the pin where the finger
-        // started rather than where it is resting.
-        const point = map.unproject([
-          at.x - rect.left,
-          at.y - rect.top,
-        ]);
+        // The point is read through the map at the moment the timer fires, not
+        // at pointerdown: the map may have panned in between, and using the
+        // stale coordinates would drop the pin where the finger started rather
+        // than where it is resting.
+        const point = map.containerPointToLatLng(
+          L.point(at.x - rect.left, at.y - rect.top),
+        );
         latest.current.onLongPress?.({
           lat: point.lat,
           lng: point.lng,
@@ -817,14 +781,27 @@ export function MapView({
       followRef.current = false;
     });
 
+    const handleDown = () => {
+      interactingRef.current = true;
+    };
+    const handleUp = () => {
+      interactingRef.current = false;
+    };
     container.addEventListener("pointerdown", handleDown);
     window.addEventListener("pointerup", handleUp);
     window.addEventListener("pointercancel", handleUp);
 
+    // Leaflet measures its container once, at construction; a container that
+    // changes size later — the sheet sliding in over it, a phone rotating —
+    // leaves the map sized for a world that no longer fits it.
+    const resizeObserver = new ResizeObserver(() => map.invalidateSize());
+    resizeObserver.observe(container);
+
     return () => {
       cancelPress();
-      window.clearTimeout(styleWatchdog);
-      map.off("error", handleStyleError);
+      window.clearTimeout(tileWatchdog);
+      map.off("tileerror", noticeDegraded);
+      resizeObserver.disconnect();
       container.removeEventListener("pointerdown", handlePressStart, {
         capture: true,
       });
@@ -863,10 +840,12 @@ export function MapView({
     const map = mapRef.current;
     if (!map || !followTarget || !followRef.current) return;
     glide({
-      // Same rule as above, for the rider being followed.
+      // Same rule as the centre effect: the map stays on Bukidnon, and the
+      // screen that owns the point decides whether an out-of-province fix
+      // should be treated as an error.
       center: (() => {
         const inside = clampToRegion(followTarget);
-        return [inside.lng, inside.lat];
+        return [inside.lat, inside.lng];
       })(),
       duration: EASE_FOLLOW_MS,
     });
@@ -898,10 +877,14 @@ export function MapView({
       // screen that owns it, rather than quietly moved here.
       center: (() => {
         const inside = clampToRegion(center);
-        return [inside.lng, inside.lat];
+        return [inside.lat, inside.lng];
       })(),
       duration: EASE_CENTER_MS,
     });
+    // `center` itself is read through the closure, latest at effect time; the
+    // coordinate keys are the actual inputs, so a caller rebuilding the object
+    // every render does not restart a glide already under way.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [center.lat, center.lng, glide]);
 
   useEffect(() => {
@@ -913,9 +896,9 @@ export function MapView({
   }, [zoomProp, glide]);
 
   /* ── Markers ────────────────────────────────────────────────────────────── */
-  // Deliberately not gated on `ready`: a maplibre marker is a DOM element and
-  // needs no basemap, so the pins still show if the style document is slow or
-  // unreachable. Only the route layer below waits for the style.
+  // Deliberately not gated on `ready`: a Leaflet marker is a DOM element and
+  // needs no basemap, so the pins still show if the tiles are slow or
+  // unreachable. Only the overlay layers below wait for tiles.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -929,8 +912,14 @@ export function MapView({
       if (!entry) {
         const element = document.createElement("div");
         element.className = "flex flex-col items-center";
-        const marker = new Marker({ element, anchor: "center" });
-        marker.setLngLat([next.lng, next.lat]).addTo(map);
+        const icon = L.divIcon({
+          className: "",
+          html: element,
+          iconSize: [0, 0],
+        });
+        const marker = L.marker([next.lat, next.lng], { icon });
+        element.style.transform = "translate(-50%, -50%)";
+        marker.addTo(map);
         const created: MarkerEntry = {
           marker,
           element,
@@ -981,9 +970,13 @@ export function MapView({
   }, [markers, clickable]);
 
   /* ── Demand heatmap ─────────────────────────────────────────────────────── */
-  // Added before the route layer, so it sits *under* the line rather than
-  // washing it out: maplibre stacks layers in insertion order, and the route
-  // is the thing a driver follows while the heat is only context.
+  /*
+   * Added to a group that keeps it **below** the route polylines: Leaflet
+   * stacks panes by z-index, and the route is the thing a driver follows while
+   * the heat is only context. Circles rather than a thermal gradient, because
+   * a genuinely smooth heat field would need a canvas overlay that re-projects
+   * on every frame — a lot of code for context that is read at a glance.
+   */
   const heatmapKey = (heatmap ?? [])
     .map((point) => `${point.lat},${point.lng},${point.weight}`)
     .join("|");
@@ -995,64 +988,26 @@ export function MapView({
     const map = mapRef.current;
     if (!map || !ready) return;
 
-    const points = heatmapRef.current;
-    const data = {
-      type: "FeatureCollection" as const,
-      features: points.map((point) => ({
-        type: "Feature" as const,
-        properties: { weight: point.weight },
-        geometry: {
-          type: "Point" as const,
-          coordinates: [point.lng, point.lat],
-        },
-      })),
-    };
-
-    const source = map.getSource(HEATMAP_SOURCE) as GeoJSONSource | undefined;
-    if (source) {
-      source.setData(data);
-      return;
+    const layer = L.layerGroup().addTo(map);
+    for (const point of heatmapRef.current) {
+      // A cell hit by one request is a faint smudge; a cell hit by ten is a
+      // solid patch, which is the whole point of a density map.
+      const weight = Math.max(1, Math.min(10, point.weight));
+      L.circleMarker([point.lat, point.lng], {
+        radius: 16 + weight * 4,
+        weight: 0,
+        fillOpacity: 0.08 + weight * 0.035,
+        stroke: false,
+        fill: true,
+        fillColor: weight >= 5 ? "#ffc72c" : "#e1251b",
+      }).addTo(layer);
     }
 
-    map.addSource(HEATMAP_SOURCE, { type: "geojson", data });
-    map.addLayer({
-      id: `${HEATMAP_SOURCE}-layer`,
-      type: "heatmap",
-      source: HEATMAP_SOURCE,
-      paint: {
-        // A cell hit by one request is a faint smudge; a cell hit by ten is a
-        // solid patch, which is the whole point of a density map.
-        "heatmap-weight": [
-          "interpolate",
-          ["linear"],
-          ["get", "weight"],
-          1,
-          0.4,
-          10,
-          1,
-        ],
-        "heatmap-intensity": 0.7,
-        "heatmap-radius": 45,
-        "heatmap-opacity": 0.7,
-        // Brand maroon through to gold, so the layer reads as part of FETCH
-        // rather than as a stock heatmap in primary colours.
-        "heatmap-color": [
-          "interpolate",
-          ["linear"],
-          ["heatmap-density"],
-          0,
-          "rgba(225,37,27,0)",
-          0.2,
-          "rgba(225,37,27,0.35)",
-          0.5,
-          "rgba(225,37,27,0.6)",
-          1,
-          "rgba(255,199,44,0.85)",
-        ],
-      },
-    });
+    return () => {
+      layer.remove();
+    };
     // Keyed on the points, not the array identity — the caller rebuilds the
-    // array every render, and re-setting identical data would re-parse it.
+    // array every render, and redrawing identical points would flicker.
   }, [heatmapKey, ready]);
 
   /* ── Route line ─────────────────────────────────────────────────────────── */
@@ -1061,47 +1016,34 @@ export function MapView({
     if (!map || !ready) return;
 
     const points = routeRef.current;
-    const data =
-      points.length >= 2
-        ? {
-            type: "Feature" as const,
-            properties: {},
-            geometry: {
-              type: "LineString" as const,
-              coordinates: points.map((point) => [point.lng, point.lat]),
-            },
-          }
-        : { type: "FeatureCollection" as const, features: [] };
-
-    const source = map.getSource(ROUTE_SOURCE) as GeoJSONSource | undefined;
-    if (source) {
-      source.setData(data);
-      return;
-    }
     if (points.length < 2) return;
 
-    map.addSource(ROUTE_SOURCE, { type: "geojson", data });
-    map.addLayer({
-      id: `${ROUTE_SOURCE}-casing`,
-      type: "line",
-      source: ROUTE_SOURCE,
-      layout: { "line-cap": "round", "line-join": "round" },
-      paint: {
-        "line-color": ROUTE_CASING,
-        "line-width": 8,
-        "line-opacity": 0.9,
-      },
+    const latlngs = points.map((point) => L.latLng(point.lat, point.lng));
+    const casing = L.polyline(latlngs, {
+      color: ROUTE_CASING,
+      weight: 8,
+      opacity: 0.9,
+      lineCap: "round",
+      lineJoin: "round",
+      interactive: false,
     });
-    map.addLayer({
-      id: `${ROUTE_SOURCE}-line`,
-      type: "line",
-      source: ROUTE_SOURCE,
-      layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-color": ROUTE_COLOR, "line-width": 4 },
+    const line = L.polyline(latlngs, {
+      color: ROUTE_COLOR,
+      weight: 4,
+      lineCap: "round",
+      lineJoin: "round",
+      interactive: false,
     });
+    casing.addTo(map);
+    line.addTo(map);
+
+    return () => {
+      casing.remove();
+      line.remove();
+    };
     // Keyed on the drawn geometry, not on the array identity: `routeGeometry`
-    // is rebuilt on every render, and re-setting identical data each time would
-    // make maplibre re-parse the line continuously.
+    // is rebuilt on every render, and re-creating identical polylines each time
+    // would churn the DOM on every keystroke.
   }, [routeKey, ready]);
 
   /* ── Draggable pin, for fine-tuning an end of the trip ──────────────────── */
@@ -1116,30 +1058,38 @@ export function MapView({
     }
 
     if (!dragRef.current) {
-      const element = document.createElement("div");
-      element.className = "relative cursor-grab touch-none";
-      element.innerHTML = DRAG_PIN_HTML;
-      const marker = new Marker({ element, draggable: true, anchor: "bottom" });
-      marker.setLngLat([dragPoint.lng, dragPoint.lat]).addTo(map);
+      // `draggable: true` is Leaflet's own gesture handling; `drag` and
+      // `dragend` report what it decided, which is what the callers read.
+      const marker = L.marker([dragPoint.lat, dragPoint.lng], {
+        draggable: true,
+        icon: L.divIcon({
+          className: "",
+          html: DRAG_PIN_HTML,
+          iconSize: [32, 48],
+          iconAnchor: [16, 48],
+        }),
+        interactive: false,
+      });
+      marker.addTo(map);
       marker.on("drag", () => {
-        const position = marker.getLngLat();
+        const position = marker.getLatLng();
         latest.current.onDragPointChange?.({
           lat: position.lat,
           lng: position.lng,
         });
       });
       marker.on("dragend", () => {
-        const position = marker.getLngLat();
+        const position = marker.getLatLng();
         latest.current.onDragPointEnd?.({
           lat: position.lat,
           lng: position.lng,
         });
       });
-      dragRef.current = { marker, element };
+      dragRef.current = { marker };
       return;
     }
 
-    dragRef.current.marker.setLngLat([dragPoint.lng, dragPoint.lat]);
+    dragRef.current.marker.setLatLng([dragPoint.lat, dragPoint.lng]);
     // Keyed on the coordinates for the same reason as `followTarget`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dragPoint?.lat, dragPoint?.lng]);
@@ -1163,7 +1113,7 @@ export function MapView({
     // "put me back here", so from then on the map tracks that point until the
     // commuter pans away again (see the `dragstart` handler).
     followRef.current = Boolean(recenterTarget ?? followTarget);
-    glide({ center: [target.lng, target.lat], duration: EASE_CENTER_MS });
+    glide({ center: [target.lat, target.lng], duration: EASE_CENTER_MS });
   };
 
   /*
@@ -1196,11 +1146,10 @@ export function MapView({
           rather than the middle of the SVG.
 
           Below the controls (z-10) so zoom and recentre stay tappable, and
-          above the canvas so the pin is never lost against the tiles.
+          above the map so the pin is never lost against the tiles.
       */}
-      {centerPin ? (          <div
-          className="pointer-events-none absolute inset-0 z-[5]"
-        >
+      {centerPin ? (
+        <div className="pointer-events-none absolute inset-0 z-[5]">
           {/*
               `left-1/2 top-1/2` puts the *top-left corner* of the graphic on
               the centre, so both axes have to be translated back: the full
@@ -1233,7 +1182,7 @@ export function MapView({
 
       {/* Controls. 44px on a phone, where these get pressed with a thumb on a
           moving bus; they shrink back on pointer devices. */}
-      {interactive && !unavailable ? (
+      {interactive ? (
         <div className="absolute right-3 top-3 z-10 flex flex-col gap-2">
           <button
             type="button"
@@ -1263,39 +1212,24 @@ export function MapView({
       ) : null}
 
       {/*
-          A map that never started, said out loud.
+          A basemap that never arrived, said out loud.
 
-          Covers the canvas, so the pin and the controls behind it — which are
-          real DOM and stay mounted — are not mistaken for a working map. The
-          second line is the browser's own answer when it gave one, because
-          "hardware acceleration is off" and "the GPU process would not boot"
-          are different problems with different fixes.
+          Covers part of the map, and the pin, controls and markers behind it —
+          which are real DOM and stay mounted — are not mistaken for a working
+          map. The map still pans underneath and the pins still show; what it
+          does not have is anything to look at.
       */}
-      {unavailable ? (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-secondary/70 px-5">
+      {degraded ? (
+        <div className="absolute inset-0 z-[9] flex items-center justify-center bg-secondary/70 px-5">
           <div className="max-w-[22rem] rounded-lg border border-border bg-background/95 px-3.5 py-3 text-center shadow-sm">
             <p className="text-xs font-medium text-foreground">
-              This browser will not start the map.
+              No map tiles yet.
             </p>
             <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-              The map needs WebGL2, and this browser did not provide it. Turn on
-              hardware acceleration in the browser's settings, or open the app
-              in one that has it.
+              The basemap could not be reached. Pins are still live — check the
+              connection and the map will populate on its own.
             </p>
-            {unavailableReason ? (
-              <p className="mt-1 text-[10px] leading-snug text-muted-foreground/80">
-                {unavailableReason}
-              </p>
-            ) : null}
           </div>
-        </div>
-      ) : null}
-
-      {degraded ? (
-        <div className="pointer-events-none absolute bottom-5 left-3 z-10">
-          <span className="inline-flex max-w-[80%] items-center gap-1.5 rounded-full bg-background/90 px-2.5 py-1 text-[10px] font-medium tracking-tight text-muted-foreground shadow-sm backdrop-blur">
-            Basic map — live directions and street detail are unavailable
-          </span>
         </div>
       ) : null}
 

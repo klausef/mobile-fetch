@@ -1,18 +1,21 @@
 /**
  * The map must not be able to go blank because one API key is wrong.
  *
- * `mapStyle()` has always had a fallback, but it only fires at *build* time,
- * when the key is absent — `hasMapTiler` is a check on the string, not on
- * whether the string works. So the failure that actually happens in the field
- * was invisible to it: a key that is present but mistyped, expired, over quota,
- * or blocked by an origin rule the app did not anticipate. MapLibre fails to
- * load the style, `load` never fires, and the rider is looking at an empty
- * rectangle with nothing on screen to say whether the app is broken, the
- * network is down, or one token needs replacing.
+ * The Leaflet renderer has no style document and no worker, so the two classes
+ * of failure that used to follow from those — a key that loads a style but
+ * never fires `load`, and a worker URL that a bundler invalidated — are gone.
+ * What is still true, and still tested, is the *idea* behind them:
  *
- * The keyless OpenStreetMap style is what makes recovery possible at all, so
- * these contracts cover the path that reaches it, the bound on it (one swap, or
- * an offline device retries forever), and the fact that it is not silent.
+ *   • The tiles are decided from configuration at build time
+ *     (`getBasemap()`), and the activation is visible in code, not runtime:
+ *     the keyless OpenStreetMap source is what a checkout with no key loads,
+ *     so the app never opens on a blank rectangle just because somebody forgot
+ *     to paste a token.
+ *   • When the active tile host will not answer, the rider is told in words,
+ *     and told that the map itself — pins, panning, the route line — still
+ *     works underneath.
+ *
+ * Run: bun test
  */
 import { test, expect, describe } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -20,65 +23,73 @@ import { readFileSync } from "node:fs";
 const view = readFileSync("src/components/map/MapView.tsx", "utf8");
 const mapLib = readFileSync("src/lib/map-service.ts", "utf8");
 
-describe("the keyless style is available as a recovery", () => {
-  test("it is its own exported style, not a branch inside mapStyle", () => {
-    // If this lived only inside `mapStyle`, a runtime recovery could not reach
-    // it — that is the whole reason it is factored out.
-    expect(mapLib).toContain("export function fallbackMapStyle(): StyleSpecification");
+describe("the keyless basemap is available as a recovery", () => {
+  test("it is its own exported source, not a branch inside getBasemap", () => {
+    // If this lived only inside `getBasemap`, a test or a diagnostic could not
+    // reach it directly — that is the whole reason it is factored out.
+    expect(mapLib).toContain("export const OSM_TILES: TileConfig");
   });
 
-  test("the no-key path uses it rather than repeating the style", () => {
-    expect(mapLib).toContain("return fallbackMapStyle();");
+  test("the no-key path uses it rather than repeating the config", () => {
+    expect(mapLib).toContain("hasMapTiler ? mapTilerTiles() : OSM_TILES");
   });
 
-  test("it is real OpenStreetMap raster tiles, not an empty style", () => {
+  test("it is real OpenStreetMap raster tiles, not an empty config", () => {
     // A fallback that renders nothing is worse than no fallback, because it
     // replaces one silent failure with another.
     expect(mapLib).toContain("https://tile.openstreetmap.org/{z}/{x}/{y}.png");
-    expect(mapLib).toContain('type: "raster"');
-    expect(mapLib).toContain("maxzoom: OSM_PROVIDER.maxZoom");
   });
 
   test("it carries its attribution, as the licence requires", () => {
-    expect(mapLib).toMatch(/attribution: OSM_PROVIDER\.attribution/);
+    expect(mapLib).toMatch(/attribution: "© OpenStreetMap contributors"/);
   });
 });
 
-describe("a style that never arrives is caught", () => {
-  test("the error path swaps to the keyless style", () => {
-    expect(view).toContain("import {\n  MAP_ATTRIBUTION,\n  fallbackMapStyle,");
-    expect(view).toContain("map.setStyle(fallbackMapStyle())");
+describe("the basemap is decided before the map is built", () => {
+  test("MapView asks the service layer which tiles to load", () => {
+    expect(view).toContain("const basemap = getBasemap();");
+    expect(view).toContain("L.tileLayer(basemap.url");
   });
 
-  test("a quiet failure is caught by a watchdog too", () => {
-    // Not every failure emits an `error` event — a hung request and a blocked
-    // origin can leave MapLibre silent — so the timeout is the guarantee and
-    // the event is the fast path.
-    expect(view).toContain("const STYLE_LOAD_TIMEOUT_MS");
-    expect(view).toContain("map.on(\"error\", handleStyleError)");
-    expect(view).toContain("if (!map.loaded()) fallBackToKeyless()");
-  });
-
-  test("the watchdog is cleared once the map loads", () => {
-    expect(view).toContain("window.clearTimeout(styleWatchdog)");
-  });
-
-  test("it is cleared on unmount too", () => {
-    // A timer that outlives its map fires against a destroyed instance and, on
-    // a fast re-mount, races the new one into swapping a healthy style.
-    const cleanup = view.slice(view.indexOf("return () => {", view.indexOf("styleWatchdog")));
-    expect(cleanup.slice(0, 400)).toContain("window.clearTimeout(styleWatchdog)");
-    expect(cleanup.slice(0, 400)).toContain('map.off("error", handleStyleError)');
+  test("the choice happens at construction, not after a failure", () => {
+    // A tile layer handed a wrong URL fails visibly as tile errors; a style
+    // handed a wrong key used to fail as silence. But the decision still has
+    // to be made up front, because every tile request after it would be wasted
+    // against a host that is not the one configured.
+    const at = view.indexOf("const basemap = getBasemap();");
+    const constructed = view.indexOf("L.map(container");
+    expect(at).toBeGreaterThan(-1);
+    expect(at).toBeLessThan(constructed);
   });
 });
 
-describe("the fallback happens at most once", () => {
-  test("a flag guards the swap", () => {
-    // Without this, a device with no network retries forever, each retry
-    // failing, which is worse for the battery than the blank map was.
-    expect(view).toContain("let onPrimaryStyle = true;");
-    expect(view).toContain("if (!onPrimaryStyle) return;");
-    expect(view).toContain("onPrimaryStyle = false;");
+describe("a tile host that will not answer is caught", () => {
+  test("tile errors surface the degraded state", () => {
+    expect(view).toContain('map.on("tileerror", noticeDegraded)');
+  });
+
+  test("a silent failure is caught by a watchdog too", () => {
+    // Not every failure emits `tileerror` — an unreachable host with no
+    // responses at all is silent — so the timeout is the guarantee and the
+    // event is the fast path.
+    expect(view).toContain("const TILE_LOAD_TIMEOUT_MS");
+    expect(view).toContain("window.setTimeout(() => {");
+  });
+
+  test("the failure is noticed at most once", () => {
+    // Without this, a device with no network fires a tileerror per visible
+    // tile, and the notice would churn on every pan.
+    expect(view).toContain("let degradedNoticed = false;");
+    expect(view).toContain("if (degradedNoticed) return;");
+    expect(view).toContain("degradedNoticed = true;");
+  });
+
+  test("the watchdog and its listener are cleared on unmount too", () => {
+    // A timer that outlives its map fires against a destroyed instance and,
+    // on a fast re-mount, races the new one into flagging a healthy basemap.
+    const cleanup = view.slice(view.indexOf("return () => {", view.indexOf("tileWatchdog")));
+    expect(cleanup.slice(0, 400)).toContain("window.clearTimeout(tileWatchdog)");
+    expect(cleanup.slice(0, 400)).toContain('map.off("tileerror", noticeDegraded)');
   });
 });
 
@@ -89,103 +100,44 @@ describe("the rider is told, because silence reads as broken", () => {
   });
 
   test("and shown as words, not a colour change", () => {
-    expect(view).toContain("Basic map — live directions and street detail are unavailable");
+    expect(view).toContain("No map tiles yet.");
   });
 
   test("the map keeps working underneath it", () => {
-    // A degraded style is a different basemap, not an error screen: pins, the
+    // A degraded basemap is a missing layer, not an error screen: pins, the
     // route line and picking must all still function.
     expect(view).not.toContain("if (degraded) return null");
   });
 });
 
 /**
- * The worker, not the style, is what fetches tiles.
- *
- * A worker that cannot load leaves the map looking half-alive: the style
- * builds, the controls draw, the canvas stays empty — and the console says only
- * "Worker failed to load. Check that the worker URL is correct." MapLibre finds
- * its worker relative to its own module (`new URL("./maplibre-gl-worker.mjs",
- * import.meta.url)`), which a bundler can silently invalidate: Vite's dev
- * pre-bundler rewrites the library into `node_modules/.vite/deps/` without
- * copying the worker beside it, so the derived URL 404s and the booking and
- * pin-dropping maps render as an empty rectangle. These contracts pin the
- * override that keeps the worker addressable.
+ * Leaflet needs no WebGL context and no bundler-owned worker, so the two
+ * issues that made the maplibre version fragile on this front are gone. These
+ * contracts keep the guarantee the old tests were guarding: nothing in the
+ * map's own setup can silently fail in a way the rider cannot see.
  */
-describe("the tile worker is pointed at a real URL", () => {
-  test("the worker URL is handed to MapLibre explicitly", () => {
-    expect(view).toContain("setWorkerUrl(maplibreWorkerUrl)");
+describe("the renderer carries no hidden runtime requirements", () => {
+  test("it imports Leaflet's stylesheet, so the map is actually styled", () => {
+    // Leaflet positions its tiles with CSS from its own stylesheet; without
+    // the import the map draws tiles stacked vertically.
+    expect(view).toContain('import "leaflet/dist/leaflet.css";');
   });
 
-  test("it is a bundler-owned worker URL, not a hand-built path", () => {
-    // `?worker&url` has the bundler emit the worker and return its URL, so the
-    // address is right in dev and in a build alike; a hand-written path would
-    // rot the moment node_modules moved.
-    expect(view).toContain(
-      'from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url"',
-    );
+  test("there is no WebGL requirement left in the file", () => {
+    // The old renderer threw from its constructor without a GPU; this one
+    // must not depend on one. Checked against code and imports rather than
+    // prose — a historical note about the renderer this replaced is free to
+    // mention it, a dependency is not.
+    expect(view).not.toMatch(/from ["']maplibre-gl/);
+    expect(view).not.toMatch(/\bnew (MapLibre\w*)\(/);
+    expect(view.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")).not.toContain("WebGL");
+    expect(view).not.toContain("setWorkerUrl");
   });
 
-  test("the override is registered before any map is built", () => {
-    // MapLibre reads `WORKER_URL` when it spawns its worker pool, so a call
-    // made after the first `new MapLibreMap(...)` would already be too late
-    // for that map — and the first map is the one the commuter sees.
-    expect(view.indexOf("setWorkerUrl(maplibreWorkerUrl)")).toBeGreaterThan(-1);
-    expect(view.indexOf("setWorkerUrl(maplibreWorkerUrl)")).toBeLessThan(
-      view.indexOf("new MapLibreMap("),
-    );
-  });
-});
-
-/**
- * The third way the map can go missing, and the one that used to be silent.
- *
- * The style fallback and the degraded notice both assume a map exists to
- * complain about. maplibre-gl v6 needs a WebGL2 context and throws from its
- * constructor when the browser will not hand one over — hardware acceleration
- * switched off, a driver on the blocklist, a virtual machine or a remote
- * renderer with no GPU. That throw lands inside a `useEffect`, so nothing
- * catches it, nothing renders, and the rider is left with the pin and the zoom
- * buttons over an empty rectangle: indistinguishable from a broken app. These
- * contracts keep the guard, and the words, in place.
- */
-describe("a map that cannot start says so", () => {
-  test("the constructor is the guarded thing", () => {
-    expect(view).toContain("let map: MapLibreMap;");
-    expect(view).toMatch(/try \{\s*map = new MapLibreMap\(\{/);
-  });
-
-  test("the failure is caught, and takes no further map with it", () => {
-    // Everything after the constructor — the handlers, the watchdog, the
-    // style — needs a map that exists. A catch that carried on would turn one
-    // clear failure into a cascade of null dereferences.
-    // Bounded by the line that needs a real map, so this cannot pass on a
-    // `return` that belongs to some later handler.
-    const at = view.indexOf("} catch (error) {");
-    expect(at).toBeGreaterThan(-1);
-    const caught = view.slice(at, view.indexOf("mapRef.current = map;", at));
-    expect(caught).toContain("setUnavailable(true)");
-    expect(caught).toContain("return;");
-  });
-
-  test("the rider is told what it needs, in words", () => {
-    expect(view).toContain("This browser will not start the map.");
-    expect(view).toContain("The map needs WebGL2");
-  });
-
-  test("the browser's own reason is carried through when it gave one", () => {
-    // "Hardware acceleration is off" and "the GPU process would not boot" are
-    // different problems with different fixes, and the browser already said
-    // which one it was — maplibre hands the status message on to us.
-    expect(view).toContain("setUnavailableReason(webglReason(error))");
-    expect(view).toContain("function webglReason(error: unknown): string | null");
-    expect(view).toContain("statusMessage");
-  });
-
-  test("controls that would do nothing are not drawn", () => {
-    // Zoom and recentre are real DOM and stay mounted over a canvas that never
-    // existed; leaving them up is the app pretending to work.
-    expect(view).toContain("{interactive && !unavailable ? (");
-    expect(view).toContain("const [unavailable, setUnavailable] = useState(false);");
+  test("the container is observed, so a resizing map keeps up", () => {
+    // Leaflet measures once at construction. The sheet-over-map layout means
+    // the container does change size, and a stale internal size draws tiles
+    // cut off or offset.
+    expect(view).toContain("new ResizeObserver(() => map.invalidateSize())");
   });
 });

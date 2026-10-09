@@ -16,22 +16,25 @@ import { readFileSync } from "node:fs";
 import {
   MAPTILER_KEY,
   ORS_KEY,
-  getMapProvider,
+  getBasemap,
+  getBasemapId,
+  OSM_TILES,
   hasMapTiler,
   hasOrs,
-  mapStyle,
   searchPlaces,
+  MAP_ATTRIBUTION,
 } from "../src/lib/map-service.ts";
 import { fetchRoute, straightGeometry, toLatLngs } from "../src/lib/routing-service.ts";
 
 const mapSource = readFileSync("src/lib/map-service.ts", "utf8");
 const routingSource = readFileSync("src/lib/routing-service.ts", "utf8");
 
-test("the provider matches whether a MapTiler key is configured", () => {
-  // Key present means the MapTiler provider, key absent means the keyless OSM
-  // one. A mismatch here is the bug this whole file exists for.
-  expect(getMapProvider().id).toBe(hasMapTiler ? "maptiler" : "osm");
-});
+test("the basemap matches whether a MapTiler key is configured", () => {
+  // Key present means MapTiler tiles, key absent means the keyless OSM ones. A
+  // mismatch here is the bug this whole file exists for.
+  expect(getBasemapId()).toBe(hasMapTiler ? "maptiler" : "osm");
+  expect(getBasemap().id).toBe(hasMapTiler ? "maptiler" : "osm");
+});;
 
 test("each credential is either a trimmed key or absent", () => {
   for (const key of [MAPTILER_KEY, ORS_KEY]) {
@@ -43,40 +46,37 @@ test("each credential is either a trimmed key or absent", () => {
   expect(hasOrs).toBe(ORS_KEY.length > 0);
 });
 
-test("the provider always declares somewhere to send attribution", () => {
+test("the active basemap declares somewhere to send attribution", () => {
   // Renderers have to credit the tile source; an empty string silently drops
   // the credit, and the map stops complying with the tile terms.
-  const provider = getMapProvider();
-  expect(provider.attribution.trim().length).toBeGreaterThan(0);
-  expect(provider.maxZoom).toBeGreaterThan(0);
+  const basemap = getBasemap();
+  expect(basemap.attribution.trim().length).toBeGreaterThan(0);
+  expect(basemap.maxZoom).toBeGreaterThan(0);
+  // The attribution under the map must match the tiles actually served.
+  expect(MAP_ATTRIBUTION).toBe(basemap.attribution);
 });
 
-test("the style is a hosted document only when there is a key to load it", () => {
-  const style = mapStyle();
-  if (hasMapTiler) {
-    // The key must be in the URL, or MapTiler answers 401 and the map is blank.
-    expect(typeof style).toBe("string");
-    expect(String(style)).toContain("api.maptiler.com");
-    expect(String(style)).toContain(MAPTILER_KEY);
-    return;
-  }
+test("the Leaflet maps load raster tiles from a URL template", () => {
+  // Leaflet reads `urlSrc` templates; no more style documents to validate.
+  const basemap = getBasemap();
+  expect(basemap.url).toContain("{z}/{x}/{y}");
+  expect(basemap.minZoom).toBeGreaterThan(0);
+  expect(basemap.maxZoom).toBeGreaterThanOrEqual(14);
+  // The keyless default is OSM, not null — a checkout with no key still gets
+  // a working map.
+  const osm = OSM_TILES;
+  expect(osm.id).toBe("osm");
+  expect(osm.url).toBe("https://tile.openstreetmap.org/{z}/{x}/{y}.png");
+});
 
-  // Keyless: an inline raster style over OpenStreetMap, which is still a real
-  // map rather than an empty canvas.
-  expect(typeof style).toBe("object");
-  const spec = style as {
-    version: number;
-    sources: Record<string, { type: string; tiles?: string[] }>;
-    layers: Array<{ type: string; source: string }>;
-  };
-  expect(spec.version).toBe(8);
-  const source = Object.values(spec.sources)[0];
-  expect(source.type).toBe("raster");
-  expect(source.tiles?.[0]).toContain("{z}/{x}/{y}");
-  expect(spec.layers[0].type).toBe("raster");
-  // Every layer has to point at a source that exists, or maplibre throws while
-  // loading the style and nothing draws at all.
-  expect(Object.keys(spec.sources)).toContain(spec.layers[0].source);
+test("the map component points Leaflet at the decided basemap", () => {
+  // MapView must ask map-service which tiles to load, or a config change
+  // would silently leave the map on whatever it was built against.
+  const view = readFileSync("src/components/map/MapView.tsx", "utf8");
+  expect(view).toContain("getBasemap()");
+  // Checked as an import rather than as prose: a historical note about the
+  // renderer this replaced is free to mention it, a dependency is not.
+  expect(view).not.toMatch(/from ["']maplibre-gl/);
 });
 
 test("a query below the minimum length never reaches the network", async () => {

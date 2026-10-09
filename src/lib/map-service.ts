@@ -7,15 +7,15 @@
  * ── Which provider runs ──────────────────────────────────────────────────────
  * Two are wired up:
  *
- *   • MapTiler — vector tiles plus forward and reverse geocoding. This is the
- *     provider FETCH is built for, and it is used whenever a MapTiler key is
+ *   • MapTiler — forward and reverse geocoding, plus optional raster tiles
+ *     when `getBasemap()` picks MapTiler. Used whenever a MapTiler key is
  *     present.
  *   • OpenStreetMap (Nominatim) — keyless. This is the fallback, and it is not
  *     a stub: a checkout with no map key still gets a working map and a working
  *     address search, so the app never opens on a blank rectangle just because
  *     somebody forgot to paste a token.
  *
- * The switch is made by `getMapProvider()` from the presence of
+ * The switch is made by `getBasemap()` from the presence of
  * `VITE_MAPTILER_KEY`, not by a build flag, so the same bundle works both ways.
  *
  * ── Why the VITE_ prefix ─────────────────────────────────────────────────────
@@ -30,8 +30,65 @@
  * returns Bukidnon results first instead of places in Manila or abroad.
  */
 
-import type { MapOptions, StyleSpecification } from "maplibre-gl";
 import { isInRegion, REGION } from "@/lib/region";
+
+/**
+ * Which raster tiles the Leaflet map loads.
+ *
+ * Two sources are wired up:
+ *
+ *   • MapTiler raster tiles — used whenever a MapTiler key is present, for
+ *     sharper rendering and a configurable style.
+ *   • OpenStreetMap's public raster tiles — keyless, and always available. This
+ *     is not a stub: a checkout with no map key still gets a working map, so
+ *     the app never opens on a blank rectangle just because somebody forgot to
+ *     paste a token.
+ *
+ * The switch is made by `getBasemap()` from the presence of `VITE_MAPTILER_KEY`,
+ * not by a build flag, so the same bundle works both ways.
+ */
+export interface TileConfig {
+  /** Stable id of the active tile source. */
+  id: "osm" | "maptiler";
+  /** Leaftet tile URL template, with `{z}/{x}/{y}` placeholders. */
+  url: string;
+  /** Lowest zoom the source serves. */
+  minZoom: number;
+  /** Highest zoom the source serves — above this Leaflet upscales. */
+  maxZoom: number;
+  /** Whether tiles are PNG (retina-capable) by the source's terms. */
+  attribution: string;
+}
+
+/** OpenStreetMap's public raster tiles. Keyless, always reachable. */
+export const OSM_TILES: TileConfig = {
+  id: "osm",
+  url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+  minZoom: 3,
+  maxZoom: 19,
+  attribution: "© OpenStreetMap contributors",
+};
+
+/** MapTiler's raster tiles, keyed from the environment. */
+function mapTilerTiles(): TileConfig {
+  return {
+    id: "maptiler",
+    url: `${MAPTILER_API}/maps/${MAPTILER_STYLE}/{z}/{x}/{y}.png?key=${MAPTILER_KEY}`,
+    minZoom: 3,
+    maxZoom: 20,
+    attribution: "© MapTiler © OpenStreetMap contributors",
+  };
+}
+
+/** The tile source the map should load, given the keys this build was given. */
+export function getBasemap(): TileConfig {
+  return hasMapTiler ? mapTilerTiles() : OSM_TILES;
+}
+
+/** Which of the two built-in sources is active, for tests and diagnostics. */
+export function getBasemapId(): "osm" | "maptiler" {
+  return getBasemap().id;
+}
 
 export type LatLng = { lat: number; lng: number };
 
@@ -277,50 +334,7 @@ export function getMapProvider(): MapProvider {
 }
 
 /** Attribution line for the active provider, rendered under the map. */
-export const MAP_ATTRIBUTION = getMapProvider().attribution;
-
-/**
- * The style maplibre-gl should load.
- *
- * With a MapTiler key this is the hosted style document, which brings vector
- * tiles, fonts, and sprites, and therefore street labels that raster tiles
- * cannot offer. Without one, it is an inline raster style over OpenStreetMap's
- * public tiles, so the map still draws — coarser, but never blank.
- */
-export function mapStyle(): MapOptions["style"] {
-  if (hasMapTiler) {
-    return `${MAPTILER_API}/maps/${MAPTILER_STYLE}/style.json?key=${MAPTILER_KEY}`;
-  }
-  return fallbackMapStyle();
-}
-
-/**
- * The keyless OpenStreetMap raster style.
- *
- * Exported because it is also the *recovery* style, not just the style for a
- * checkout with no key at all. Those are different failures: a missing key is
- * known before the map is built, whereas a key that is present but wrong —
- * mistyped, expired, over quota, or blocked by an origin restriction the app
- * never anticipated — is only discovered when MapLibre fails to load the
- * style. Without this the rider gets a blank rectangle and no way to tell
- * whether the app is broken or the map key is, which is the worst of both.
- */
-export function fallbackMapStyle(): StyleSpecification {
-  return {
-    version: 8,
-    sources: {
-      osm: {
-        type: "raster",
-        tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-        tileSize: 256,
-        attribution: OSM_PROVIDER.attribution,
-        maxzoom: OSM_PROVIDER.maxZoom,
-      },
-    },
-    layers: [{ id: "osm", type: "raster", source: "osm" }],
-  };
-}
-
+export const MAP_ATTRIBUTION = getBasemap().attribution;
 /* ── Public helpers ───────────────────────────────────────────────────────── */
 
 export async function searchPlaces(

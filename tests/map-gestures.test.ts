@@ -82,7 +82,10 @@ test("a draggable pin is offered, and takes the caller's drag handlers", () => {
   expect(mapView).toContain("dragPoint?: LatLng | null;");
   expect(mapView).toContain("onDragPointChange?: (point: LatLng) => void;");
   expect(mapView).toContain("onDragPointEnd?: (point: LatLng) => void;");
-  expect(mapView).toContain("new Marker({ element, draggable: true");
+  // Leaflet's own marker dragging, wired to the caller's two callbacks.
+  expect(mapView).toContain("draggable: true");
+  expect(mapView).toContain('marker.on("drag"');
+  expect(mapView).toContain('marker.on("dragend"');
 });
 
 test("each leg of the route is routed on its own", () => {
@@ -133,7 +136,7 @@ function viewReporting(): string {
 
 test("the centre pin is furniture on the screen, not a pin on the map", () => {
   // The Gojek model: the marker stays put and the map is dragged underneath
-  // it. A maplibre marker is anchored to a lng/lat, so it would travel with
+  // it. A Leaflet marker is anchored to a lat/lng, so it would travel with
   // the camera and quietly become the draggable-pin model again.
   expect(mapView).toContain("centerPin?: MapMarker | null;");
   expect(mapView).toContain(
