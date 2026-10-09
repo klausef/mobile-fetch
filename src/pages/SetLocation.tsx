@@ -135,31 +135,6 @@ export default function SetLocation({ step }: { step: LocationStep }) {
   // the same question as "places I have booked".
   const recentLocal = useRecentDestinations();
 
-  // Runtime guard: the type says only pickup/destination reach here, but the
-  // router can still send a non-location step at this screen during onboarding
-  // or a stale link. In that case, do not mount a Leaflet map that will "load"
-  // into a container with no visible flow and silently look broken. Show a clear
-  // empty state instead — after all hooks, so the call order is stable.
-  if (step !== "pickup" && step !== "destination") {
-    return (
-      <div className="flex min-h-dvh flex-col bg-background">
-        <div className="flex-1 flex items-center justify-center px-6 text-center">
-          <div>
-            <p className="text-sm font-medium tracking-tight">
-              {t("setLocation", "pickupEyebrow")}
-            </p>
-            <h1 className="mt-1 text-lg font-bold tracking-tight">
-              {t("setLocation", "tapToFix")}
-            </h1>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              {t("setLocation", "fallbackHint")}
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   /**
    * A pin dropped by holding the map, awaiting confirmation.
    *
@@ -551,6 +526,37 @@ export default function SetLocation({ step }: { step: LocationStep }) {
       ? distanceToFixMeters(shownPoint, here.coords)
       : null;
   const drifting = shouldWarnFixDrift(driftMeters);
+
+  // Runtime guard: the type says only pickup/destination reach here, but the
+  // router can still send a non-location step at this screen during onboarding
+  // or a stale link. In that case, do not mount a Leaflet map that will "load"
+  // into a container with no visible flow and silently look broken. Show a clear
+  // empty state instead.
+  //
+  // Deliberately below every hook. An early return above them would make the
+  // number of hooks differ between a valid and an invalid step, which React
+  // treats as a crash — "Rendered more hooks than during the previous render" —
+  // the moment the step prop changed. The screen's own comment always claimed
+  // this ran "after all hooks"; here it finally does.
+  if (step !== "pickup" && step !== "destination") {
+    return (
+      <div className="flex min-h-dvh flex-col bg-background">
+        <div className="flex-1 flex items-center justify-center px-6 text-center">
+          <div>
+            <p className="text-sm font-medium tracking-tight">
+              {t("setLocation", "pickupEyebrow")}
+            </p>
+            <h1 className="mt-1 text-lg font-bold tracking-tight">
+              {t("setLocation", "tapToFix")}
+            </h1>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              {t("setLocation", "fallbackHint")}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
