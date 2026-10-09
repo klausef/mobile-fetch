@@ -43,6 +43,8 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Crosshair, Minus, Plus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { CURRENT_LOCATION_COLOR } from "@/lib/location";
 import { LONG_PRESS_MS, LONG_PRESS_TOLERANCE_PX } from "@/lib/search";
 import { clampToRegion, REGION } from "@/lib/region";
@@ -1181,33 +1183,42 @@ export function MapView({
       ) : null}
 
       {/* Controls. 44px on a phone, where these get pressed with a thumb on a
-          moving bus; they shrink back on pointer devices. */}
+          moving bus; they shrink back on pointer devices. The shadcn `icon`
+          button already sizes for thumbs first and desktops second, so the map
+          overlays inherit the same hit-target rule as every other button in
+          the app. */}
       {interactive ? (
         <div className="absolute right-3 top-3 z-10 flex flex-col gap-2">
-          <button
+          <Button
             type="button"
             onClick={() => zoomBy(1)}
             aria-label="Zoom in"
-            className="flex size-11 items-center justify-center rounded-full border border-border bg-background/95 text-foreground shadow-sm backdrop-blur transition active:bg-secondary sm:size-10"
+            variant="outline"
+            size="icon"
+            className="size-11 rounded-full bg-background/95 shadow-sm backdrop-blur sm:size-10 [&_svg]:size-5 sm:[&_svg]:size-4"
           >
-            <Plus className="size-5 sm:size-4" />
-          </button>
-          <button
+            <Plus />
+          </Button>
+          <Button
             type="button"
             onClick={() => zoomBy(-1)}
             aria-label="Zoom out"
-            className="flex size-11 items-center justify-center rounded-full border border-border bg-background/95 text-foreground shadow-sm backdrop-blur transition active:bg-secondary sm:size-10"
+            variant="outline"
+            size="icon"
+            className="size-11 rounded-full bg-background/95 shadow-sm backdrop-blur sm:size-10 [&_svg]:size-5 sm:[&_svg]:size-4"
           >
-            <Minus className="size-5 sm:size-4" />
-          </button>
-          <button
+            <Minus />
+          </Button>
+          <Button
             type="button"
             onClick={recenter}
             aria-label="Recenter map"
-            className="flex size-11 items-center justify-center rounded-full border border-border bg-background/95 text-foreground shadow-sm backdrop-blur transition active:bg-secondary sm:size-10"
+            variant="outline"
+            size="icon"
+            className="size-11 rounded-full bg-background/95 shadow-sm backdrop-blur sm:size-10 [&_svg]:size-5 sm:[&_svg]:size-4"
           >
-            <Crosshair className="size-5 sm:size-4" />
-          </button>
+            <Crosshair />
+          </Button>
         </div>
       ) : null}
 
@@ -1220,16 +1231,16 @@ export function MapView({
           does not have is anything to look at.
       */}
       {degraded ? (
-        <div className="absolute inset-0 z-[9] flex items-center justify-center bg-secondary/70 px-5">
-          <div className="max-w-[22rem] rounded-lg border border-border bg-background/95 px-3.5 py-3 text-center shadow-sm">
+        <div className="pointer-events-none absolute inset-0 z-[9] flex items-center justify-center bg-secondary/70 px-5">
+          <Card className="max-w-[22rem] items-center gap-1.5 bg-background/95 px-3.5 py-3 text-center shadow-sm">
             <p className="text-xs font-medium text-foreground">
               No map tiles yet.
             </p>
-            <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+            <p className="text-[11px] leading-snug text-muted-foreground">
               The basemap could not be reached. Pins are still live — check the
               connection and the map will populate on its own.
             </p>
-          </div>
+          </Card>
         </div>
       ) : null}
 
