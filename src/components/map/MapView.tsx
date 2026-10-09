@@ -625,17 +625,26 @@ export function MapView({
     }
     mapRef.current = map;
 
+    /*
+     * `errorTileUrl` and the two update flags are all real options on
+     * `TileLayerOptions` / `GridLayerOptions`, so they stay typed — the point
+     * is the behaviour, not a cast around the checker.
+     *
+     * A tile that 404s or times out paints nothing by default, which reads as a
+     * hole in the map. The placeholder keeps the layer's own bookkeeping honest
+     * and makes a partial failure look like an unfinished map rather than a
+     * broken one. The update flags keep a fast pinch from spending its budget
+     * mounting tiles that are about to be replaced — the churn that used to
+     * leave the viewport briefly empty.
+     */
     L.tileLayer(basemap.url, {
       maxZoom: basemap.maxZoom,
       attribution: basemap.attribution,
-      errorTileUrl: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3C/svg%3E",
+      errorTileUrl:
+        "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3C/svg%3E",
       updateWhenIdle: true,
       updateWhenZooming: true,
-      // Keep property access uncheckable against the strict DT type so the layer
-      // can accept the runtime Leaflet defaults without a cast. The contract here
-      // is the live Leaflet build, not the static type cut in @types/leaflet.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any).addTo(map);
+    }).addTo(map);
 
     /*
      * A tile server that will not answer is only discovered here.

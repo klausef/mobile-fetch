@@ -141,3 +141,77 @@ describe("the renderer carries no hidden runtime requirements", () => {
     expect(view).toContain("new ResizeObserver(() => map.invalidateSize())");
   });
 });
+
+/**
+ * The layer's own recovery options, and the two places the rider is told what
+ * the map is doing. All three are invisible in a screenshot until something
+ * goes wrong, which is exactly when they need to already be there.
+ */
+describe("a failed tile degrades the picture, not the map", () => {
+  test("a rejected tile paints a placeholder rather than a hole", () => {
+    // Without this a 404 leaves a gap that reads as a rendering bug. The
+    // assertion is on the option, not on the exact artwork: the placeholder is
+    // free to change, its presence is not.
+    expect(view).toContain("errorTileUrl:");
+  });
+
+  test("the update flags defer work mid-gesture", () => {
+    // A fast pinch otherwise mounts tiles that are replaced a frame later —
+    // the churn that used to leave the viewport briefly empty.
+    expect(view).toContain("updateWhenIdle: true");
+    expect(view).toContain("updateWhenZooming: true");
+  });
+
+  test("the options stay typed rather than cast past the checker", () => {
+    // All three exist on TileLayerOptions/GridLayerOptions. An `as any` here
+    // would hide a genuine typo in one of them for the sake of quiet, which is
+    // the opposite of what this file is for.
+    const layer = view.slice(
+      view.indexOf("L.tileLayer(basemap.url"),
+      view.indexOf(".addTo(map);", view.indexOf("L.tileLayer(basemap.url")),
+    );
+    expect(layer).toContain("maxZoom: basemap.maxZoom");
+    expect(layer).toContain("attribution: basemap.attribution");
+    expect(layer).not.toContain("as any");
+  });
+});
+
+describe("the map says which basemap it is on", () => {
+  test("the attribution chip names the active source", () => {
+    // The fastest way to tell a credential problem from a reachability problem
+    // is knowing whether this build is asking MapTiler or OpenStreetMap.
+    expect(view).toContain(
+      'Tiles: {getBasemap().id === "maptiler" ? "MapTiler" : "OpenStreetMap"}',
+    );
+  });
+
+  test("it also says whether a key is configured", () => {
+    // A build on MapTiler tiles with no key is a different bug from one with an
+    // expired key, and the rider cannot tell them apart without this.
+    expect(view).toContain('{hasMapTiler ? " · key: yes" : ""}');
+  });
+});
+
+describe("the degraded notice explains the failure it actually hit", () => {
+  /** The degraded card, from its heading to the conditional that closes it. */
+  function notice(): string {
+    const start = view.indexOf("No map tiles yet.");
+    expect(start).toBeGreaterThan(-1);
+    // Anchored forward, not on `MAP_ATTRIBUTION`: that name first appears in
+    // the import block at the top of the file, so an unanchored search lands
+    // above the card and the slice comes back empty.
+    return view.slice(start, view.indexOf(") : null}", start));
+  }
+
+  test("a MapTiler build is told the key may be the problem", () => {
+    // The generic "check the connection" wording sends someone with an expired
+    // key looking at their wifi.
+    expect(notice()).toContain('getBasemap().id === "maptiler"');
+    expect(notice()).toContain("invalid or expired");
+  });
+
+  test("and the keyless path keeps its connection wording", () => {
+    expect(notice()).toContain("check the connection");
+    expect(notice()).toContain("Pins are still live");
+  });
+});
