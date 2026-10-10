@@ -503,6 +503,20 @@ export function MapView({
    */
   const initial = useRef({ center, zoom: zoomProp, interactive });
 
+  /**
+   * The `interactive` prop as the pointer handlers see it.
+   *
+   * `initial` above is read once, at mount, and that is right for the camera —
+   * rebuilding the map when the centre changes would throw away the tiles. It
+   * is wrong for interactivity: drag, pinch, scroll and tap are Leaflet
+   * options set at construction and never re-read, so a caller that hid the map
+   * behind something and then revealed it again was left with whichever answer
+   * the first render gave. This ref is what the press handler reads, and the
+   * interactivity effect below is what adds and removes the map's own handlers
+   * when the prop changes.
+   */
+  const interactiveRef = useRef(interactive);
+
   // Latest callbacks, read by map listeners so they never close over a stale
   // render.
   const latest = useRef({
@@ -522,7 +536,23 @@ export function MapView({
       onMarkerClick,
       onLongPress,
     };
+    interactiveRef.current = interactive;
   });
+
+  /**
+   * A tap on the basemap, reported to `onPick`.
+   *
+   * Registered by the interactivity effect rather than by the mount effect,
+   * because it has to come and go with `interactive`: a caller that covers the
+   * map with a modal and then dismisses it needs the tap back, and a map that
+   * is switched off must not still be answering taps.
+   */
+  const handleMapClick = useCallback(
+    (event: L.LeafletMouseEvent) => {
+      latest.current.onPick?.({ lat: event.latlng.lat, lng: event.latlng.lng });
+    },
+    [],
+  );
 
   /** Whether pins should accept taps at all; also a marker-effect dependency. */
   const clickable = onMarkerClick !== undefined;
@@ -696,11 +726,9 @@ export function MapView({
      */
     map.on("load", () => setReady(true));
 
-    if (initial.current.interactive) {
-      map.on("click", (event) => {
-        latest.current.onPick?.({ lat: event.latlng.lat, lng: event.latlng.lng });
-      });
-    }
+    // The tap handler is deliberately *not* registered here: the interactivity
+    // effect below owns it, so that flipping `interactive` adds and removes it
+    // for the life of the map rather than freezing the mount-time answer.
 
     /*
      * Long press → drop a pin.
@@ -731,6 +759,10 @@ export function MapView({
 
     const handlePressStart = (event: PointerEvent) => {
       cancelPress();
+      // A map that has been switched off has no gestures left, and the press is
+      // the one path that is not Leaflet's own handler — so it is checked here
+      // rather than only at mount.
+      if (!interactiveRef.current) return;
       if (event.button !== 0 && event.pointerType === "mouse") return;
       // The zoom and recentre controls live inside the map container, so a
       // press on "+" is a press on the map as far as this listener is
@@ -817,6 +849,20 @@ export function MapView({
     container.addEventListener("pointerdown", handleDown);
     window.addEventListener("pointerup", handleUp);
     window.addEventListener("pointercancel", handleUp);
+    /*
+     * `interactingRef` must never latch.
+     *
+     * It exists so the prop-driven camera stands aside during a gesture, and a
+     * gesture that never reports its end would leave it stuck on — after which
+     * every later prop change is skipped and the map "keeps still" while the
+     * caller moves under it. `pointerup` on the window covers the ordinary
+     * case, but it is not guaranteed: focus can leave mid-drag, and a pointer
+     * the sheet takes over can end without a pair. A window-level `blur` and
+     * Leaflet's own `moveend` are the two other ways a gesture can be over, so
+     * both clear it.
+     */
+    window.addEventListener("blur", handleUp);
+    map.on("moveend", handleUp);
 
     // Leaflet measures its container once, at construction; a container that
     // changes size later — the sheet sliding in over it, a phone rotating —
@@ -847,6 +893,8 @@ export function MapView({
       container.removeEventListener("pointerdown", handleDown);
       window.removeEventListener("pointerup", handleUp);
       window.removeEventListener("pointercancel", handleUp);
+      window.removeEventListener("blur", handleUp);
+      map.off("moveend", handleUp);
 
       for (const entry of markerEntries.values()) {
         if (entry.frame !== undefined) cancelAnimationFrame(entry.frame);
@@ -861,6 +909,57 @@ export function MapView({
       setReady(false);
     };
   }, []);
+
+  /* ── Interactivity ──────────────────────────────────────────────────────── */
+  /**
+   * The map's own drag, pinch, scroll and tap handlers, kept in step with the
+   * prop.
+   *
+   * Every one of those is a Leaflet option, read when the map is constructed
+   * and never again. So a caller that flipped `interactive` after mount used to
+   * get the worst of both: the zoom and recentre buttons are rendered from the
+   * prop and disappeared (see the controls below), while the map itself still
+   * panned — and a map constructed while switched off could never be switched
+   * back on at all, which is a map that answers nothing for the rest of the
+   * session. Both are one bug: the prop was read once. This effect is what
+   * makes it a live prop, in both directions.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    // Set before anything is toggled, so a pointer that arrives while this runs
+    // cannot read the previous answer.
+    interactiveRef.current = interactive;
+
+    for (const handler of [
+      map.dragging,
+      map.touchZoom,
+      map.scrollWheelZoom,
+      map.doubleClickZoom,
+      map.boxZoom,
+      map.keyboard,
+    ]) {
+      if (!handler) continue;
+      if (interactive) handler.enable();
+      else handler.disable();
+    }
+
+    if (interactive) map.on("click", handleMapClick);
+    else map.off("click", handleMapClick);
+
+    // The draggable pin is a gesture as well. A pin that can still be dragged
+    // under a sheet is the same leak as a map that can still be panned.
+    const pin = dragRef.current?.marker;
+    if (pin) {
+      if (interactive) pin.dragging?.enable();
+      else pin.dragging?.disable();
+    }
+
+    return () => {
+      map.off("click", handleMapClick);
+    };
+  }, [interactive, handleMapClick]);
 
   /* ── Follow the moving point (the rider, usually) ───────────────────────── */
   useEffect(() => {
@@ -1098,6 +1197,9 @@ export function MapView({
         interactive: false,
       });
       marker.addTo(map);
+      // A pin created while the map is non-interactive must not be draggable
+      // either. The interactivity effect keeps the two in step from here on.
+      if (!interactiveRef.current) marker.dragging?.disable();
       marker.on("drag", () => {
         const position = marker.getLatLng();
         latest.current.onDragPointChange?.({

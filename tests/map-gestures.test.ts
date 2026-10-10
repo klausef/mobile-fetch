@@ -166,3 +166,75 @@ test("the centre is reported while it moves and once it settles", () => {
   expect(setLocation).toContain('if (phase === "move")');
   expect(setLocation).toContain("SETTLE_MIN_METERS");
 });
+
+/* ── Interactivity: a live prop, not a mount-time answer ───────────────── */
+
+/** The effect that keeps Leaflet's own handlers in step with `interactive`. */
+function interactivityEffect(): string {
+  const start = mapView.indexOf("/* ── Interactivity");
+  const end = mapView.indexOf("/* ── Follow the moving point");
+  expect(start).toBeGreaterThan(-1);
+  return mapView.slice(start, end);
+}
+
+test("turning interactivity off and back on actually toggles the map", () => {
+  // `dragging`, `touchZoom`, `scrollWheelZoom`, `doubleClickZoom`, `boxZoom`
+  // and `keyboard` are Leaflet *options*, read when the map is constructed and
+  // never again. Applying them from the prop at mount alone meant the answer
+  // was frozen: a map built while switched off could never be switched back on,
+  // and a map switched off later kept panning regardless.
+  const effect = interactivityEffect();
+  for (const handler of [
+    "map.dragging",
+    "map.touchZoom",
+    "map.scrollWheelZoom",
+    "map.doubleClickZoom",
+    "map.boxZoom",
+    "map.keyboard",
+  ]) {
+    expect(effect).toContain(handler);
+  }
+  expect(effect).toContain("if (interactive) handler.enable();");
+  expect(effect).toContain("else handler.disable();");
+  // Keyed on the prop itself: that dependency list is the fix.
+  expect(effect).toContain("}, [interactive, handleMapClick]);");
+});
+
+test("the tap handler comes and goes with the prop", () => {
+  // Registered once at mount behind `initial.current.interactive`, it either
+  // stayed on a map that had been switched off, or was missing from a map that
+  // had been switched on.
+  expect(mapView).not.toContain("if (initial.current.interactive) {");
+  const effect = interactivityEffect();
+  expect(effect).toContain('if (interactive) map.on("click", handleMapClick);');
+  expect(effect).toContain('else map.off("click", handleMapClick);');
+  // Registered in exactly one place, so the two cannot disagree.
+  expect(mapView.split('map.on("click", handleMapClick)').length - 1).toBe(1);
+});
+
+test("a switched-off map takes no press, and no dragged pin", () => {
+  // The press is the one gesture that is not Leaflet's own handler, so it reads
+  // the live ref rather than the mount-time snapshot. The draggable pin is a
+  // gesture too: a pin that can still be dragged under a sheet is the same leak
+  // as a map that can still be panned.
+  expect(pressStarter()).toContain("if (!interactiveRef.current) return;");
+  expect(interactivityEffect()).toContain("pin.dragging?.enable()");
+  expect(interactivityEffect()).toContain("pin.dragging?.disable()");
+  expect(mapView).toContain(
+    "if (!interactiveRef.current) marker.dragging?.disable();",
+  );
+});
+
+test("a gesture that never reports its end cannot freeze the camera", () => {
+  // `interactingRef` makes the prop-driven camera stand aside mid-gesture.
+  // Latched on — a lost `pointerup`, a blur mid-drag, a sheet that takes the
+  // pointer — it skipped every later prop change, which is a map that keeps
+  // still while the caller moves under it.
+  const registration = mapView.slice(
+    mapView.indexOf('container.addEventListener("pointerdown", handleDown'),
+  );
+  expect(registration).toContain('window.addEventListener("blur", handleUp);');
+  expect(registration).toContain('map.on("moveend", handleUp);');
+  expect(mapView).toContain('window.removeEventListener("blur", handleUp);');
+  expect(mapView).toContain('map.off("moveend", handleUp);');
+});
